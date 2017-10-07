@@ -14,7 +14,7 @@ from config import UPDATE_SPARK_DOCKER, DELETE_HDFS, SPARK_HOME, KILL_JAVA, SYNC
     KEY_PAIR_PATH, \
     UPDATE_SPARK, \
     DISABLE_HT, ENABLE_EXTERNAL_SHUFFLE, OFF_HEAP, OFF_HEAP_BYTES, K, T_SAMPLE, TI, CORE_QUANTUM, \
-    CORE_MIN, CPU_PERIOD, HDFS, \
+    CORE_MIN, CPU_PERIOD, \
     CORE_VM, UPDATE_SPARK_MASTER, DEADLINE, MAX_EXECUTOR, ALPHA, BETA, OVER_SCALE, LOCALITY_WAIT, \
     LOCALITY_WAIT_NODE, CPU_TASK, \
     LOCALITY_WAIT_PROCESS, LOCALITY_WAIT_RACK, INPUT_RECORD, NUM_TASK, BENCH_NUM_TRIALS, \
@@ -26,10 +26,11 @@ from config import UPDATE_SPARK_DOCKER, DELETE_HDFS, SPARK_HOME, KILL_JAVA, SYNC
 
 from config import PRIVATE_KEY_PATH, PRIVATE_KEY_NAME, TEMPORARY_STORAGE, PROVIDER
 
-from util.utils import timing, between
+from util.utils import timing, between, get_cfg, write_cfg
 
 from util.ssh_client import sshclient_from_node
 
+import os
 
 # Modifiche fatte
 # - uso di PRIVATE_KEY_PATH anzichè KEY_PAIR_PATH
@@ -37,6 +38,7 @@ from util.ssh_client import sshclient_from_node
 # - uso di TEMPORARY_STORAGE anzichè "/dev/xvdb"
 # - uso di ssh_sshclient_from_node per ottenere un client ssh basato su ParamikoSSHClient
 # - uso di ip privati in azure, altrimenti fallisce il binding sulle porte di hadoop
+
 
 def get_ip(node):
     if PROVIDER == "AWS_SPOT":
@@ -219,18 +221,23 @@ def common_setup(ssh_client):
 
 
 @timing
-def setup_slave(node, master_ip):
+def setup_slave(node, master_ip, count):
     """
 
     :param node:
     :param master_ip:
     :return:
     """
+    cfg = get_cfg()
+    current_cluster = cfg['main']['current_cluster']
+
     ssh_client = sshclient_from_node(node, ssh_key_file=PRIVATE_KEY_PATH, user_name='ubuntu')
 
     print("Setup Slave: PublicIp=" + node.public_ips[0] + " PrivateIp=" + node.private_ips[0])
 
     slave_ip = get_ip(node)
+
+    cfg[current_cluster]['slave'+count+'_ip'] = slave_ip
 
     common_setup(ssh_client)
 
@@ -250,7 +257,7 @@ def setup_slave(node, master_ip):
         stdout, stderr, status = ssh_client.run('sudo $HOME/disable-ht-v2.sh')
         print("   Disabled HyperThreading {}".format(status))
 
-    if HDFS == 0:
+    if current_cluster == 'spark':
     # Modificato questo
         ssh_client.run(
             "sed -i '31s/.*/spark.shuffle.service.enabled {0}/' {1}conf/spark-defaults.conf".format(
@@ -284,7 +291,7 @@ def setup_slave(node, master_ip):
         ssh_client.run("sed -i '41s{.*{spark.control.cpuperiod " + str(
             CPU_PERIOD) + "{' " + SPARK_HOME + "conf/spark-defaults.conf")
 
-    if HDFS == 0:
+    if current_cluster == 'spark':
         print("   Starting Spark Slave")
         ssh_client.run(
             # 'export SPARK_HOME="{s}" && {s}sbin/start-slave.sh {0}:7077 -h {1}  --port 9999 -c {2}'.format(
@@ -300,16 +307,24 @@ def setup_slave(node, master_ip):
 
 
 @timing
-def setup_master(node, slaves_ip):
+def setup_master(node, slaves_ip, hdfs_master):
     """
 
     :param node:
     :return:
     """
+    cfg = get_cfg()
+    current_cluster = cfg['main']['current_cluster']
+    cfg[current_cluster] = {}
+
+    input_record = cfg['pagerank']['numV'] if 'pagerank' in cfg and 'numV' in cfg['pagerank'] else INPUT_RECORD
     ssh_client = sshclient_from_node(node, ssh_key_file=PRIVATE_KEY_PATH, user_name='ubuntu')
 
     print("Setup Master: PublicIp=" + node.public_ips[0] + " PrivateIp=" + node.private_ips[0])
     master_ip = get_ip(node)
+
+    # save private master_ip to cfg file
+    cfg[current_cluster]['master_ip'] = master_ip
 
     common_setup(ssh_client)
 
@@ -380,7 +395,7 @@ def setup_master(node, slaves_ip):
         "sed -i '31s/.*/spark.shuffle.service.enabled {0}/' {1}conf/spark-defaults.conf".format(
             ENABLE_EXTERNAL_SHUFFLE, SPARK_HOME))
 
-    if HDFS == 0:
+    if current_cluster == 'spark':
 
         # OFF HEAP
         ssh_client.run(
@@ -473,7 +488,7 @@ def setup_master(node, slaves_ip):
 
         ssh_client.run(
             "sed -i '54s{.*{spark.control.inputrecord " + str(
-                INPUT_RECORD) + "{' " + SPARK_HOME + "conf/spark-defaults.conf")
+                input_record) + "{' " + SPARK_HOME + "conf/spark-defaults.conf")
 
         ssh_client.run(
             "sed -i '55s{.*{spark.control.numtask " + str(
@@ -547,16 +562,16 @@ def setup_master(node, slaves_ip):
         print("   Enabling HDFS in benchmarks")
         ssh_client.run("sed -i '179s%memory%hdfs%g' ./spark-perf/config/config.py")
 
-    #if HDFS_MASTER != "":
+    #if hdfs_master != "":
         ssh_client.run(
             """sed -i  '50s%.*%HDFS_URL = "hdfs://{0}:9000/test/"%' ./spark-perf/config/config.py""".format(
-                HDFS_MASTER))
+                hdfs_master))
         ssh_client.run(
             """sed -i  '10s%.*%HDFS_URL="hdfs://{0}:9000"%' ./spark-bench/conf/env.sh""".format(
-                HDFS_MASTER))
+                hdfs_master))
         ssh_client.run(
             """sed -i  '14s%.*%DATA_HDFS="hdfs://{0}:9000/SparkBench"%' ./spark-bench/conf/env.sh""".format(
-                HDFS_MASTER))
+                hdfs_master))
 
         # TODO: additional settings for spark-bench
         # ssh_client.run("""sed -i '8s/.*//' ./spark-bench/conf/env.sh""")
@@ -575,17 +590,18 @@ def setup_master(node, slaves_ip):
         ssh_client.run("""sed -i '20s{.*{[ -z "$SPARK_HOME" ] \&\&     export SPARK_HOME="""+SPARK_HOME+"""{' ./spark-bench/conf/env.sh""")
 
     # START MASTER
-    if HDFS == 0:
+    if current_cluster == 'spark':
         print("   Starting Spark Master")
         ssh_client.run(
             'export SPARK_HOME="{d}" && {d}sbin/start-master.sh -h {0}'.format(
                 master_ip, d=SPARK_HOME))
 
+    write_cfg(cfg)
     return master_ip, node
 
 
 @timing
-def setup_hdfs_ssd(node):
+def setup_hdfs_ssd(node, hdfs_master):
     """
 
     :param node:
@@ -602,7 +618,7 @@ def setup_hdfs_ssd(node):
     #     ssh_client.run("sudo chown ubuntu:hadoop /mnt/hdfs && sudo chown ubuntu:hadoop /mnt/hdfs/*")
     # elif PROVIDER == "AZURE":
     ssh_client.run("sudo chown ubuntu:ubuntu /mnt/hdfs && sudo chown ubuntu:ubuntu /mnt/hdfs/*")
-    if DELETE_HDFS or HDFS_MASTER == "":
+    if DELETE_HDFS or hdfs_master == "":
         # ssh_client.run("rm /mnt/hdfs/datanode/current/VERSION")
         ssh_client.run("sudo rm /mnt/hdfs/datanode/current/VERSION")
 
@@ -623,7 +639,7 @@ def rsync_folder(ssh_client, slave):
 
 
 @timing
-def setup_hdfs_config(master_node, slaves):
+def setup_hdfs_config(master_node, slaves, hdfs_master):
     """
 
     :param master_node:
@@ -632,10 +648,10 @@ def setup_hdfs_config(master_node, slaves):
     """
     ssh_client = sshclient_from_node(master_node, ssh_key_file=PRIVATE_KEY_PATH, user_name='ubuntu')
 
-    if HDFS_MASTER == "":
+    if hdfs_master == "":
         master_ip = get_ip(master_node)
     else:
-        master_ip = HDFS_MASTER
+        master_ip = hdfs_master
 
     # Setup Config HDFS
     ssh_client.run(
@@ -669,7 +685,7 @@ def setup_hdfs_config(master_node, slaves):
             executor.submit(rsync_folder, ssh_client, slave)
 
     # Start HDFS
-    if DELETE_HDFS or HDFS_MASTER == "":
+    if DELETE_HDFS or hdfs_master == "":
         ssh_client.run(
             "eval `ssh-agent -s` && ssh-add " + "$HOME/" + PRIVATE_KEY_NAME + " && /usr/local/lib/hadoop-2.7.2/sbin/stop-dfs.sh")
         # ssh_client.run("rm /mnt/hdfs/datanode/current/VERSION")
@@ -710,11 +726,16 @@ def check_slave_connected_master(ssh_client):
 
 
 @timing
-def run_benchmark(nodes):
+def run_benchmark(nodes, hdfs_master=HDFS_MASTER):
     """
 
     :return:
     """
+    cfg = get_cfg()
+    current_cluster = cfg['main']['current_cluster']
+    hdfs_master = cfg['hdfs']['master_ip'] if 'hdfs' in cfg and 'master_ip' in cfg['hdfs'] else ''
+    print('HDFS_MASTER from clusters.ini: ' + hdfs_master)
+
     if len(nodes) == 0:
         print("No instances running")
         exit(1)
@@ -724,16 +745,17 @@ def run_benchmark(nodes):
     # TODO: pass slaves ip
     slaves_ip = [get_ip(i) for i in nodes[1:end_index]]
 
-    master_ip, master_node = setup_master(nodes[0], slaves_ip)
+    master_ip, master_node = setup_master(nodes[0], slaves_ip, hdfs_master)
     if SPARK_HOME == SPARK_2_HOME:
         print("Check Effectively Executor Running")
 
+    count = 1
     with ThreadPoolExecutor(8) as executor:
         for i in nodes[1:end_index]:
             ip = get_ip(i)
-
             if ip != master_ip:
-                executor.submit(setup_slave, i, master_ip)
+                executor.submit(setup_slave, i, master_ip, count)
+            count += 1
 
     with ThreadPoolExecutor(8) as executor:
         for i in nodes[end_index:]:
@@ -743,16 +765,23 @@ def run_benchmark(nodes):
 
                 executor.submit(common_setup, ssh_client)
 
-    if HDFS or HDFS_MASTER == master_ip:
+    if current_cluster == 'hdfs' or hdfs_master == master_ip:
         print("\nStarting Setup of HDFS cluster")
         # Format instance store SSD for hdfs usage
         with ThreadPoolExecutor(multiprocessing.cpu_count()) as executor:
             for i in nodes:
-                executor.submit(setup_hdfs_ssd, i)
+                executor.submit(setup_hdfs_ssd, i, hdfs_master)
 
         slaves = [get_ip(i) for i in nodes[:end_index]]
         slaves.remove(master_ip)
-        setup_hdfs_config(master_node, slaves)
+        setup_hdfs_config(master_node, slaves, hdfs_master)
+#        cfg['hdfs'] = {}
+#        cfg['hdfs']['master_ip'] = master_ip
+        count = 1
+        for ip in slaves:
+            cfg['hdfs']['slave'+str(count)+'_ip'] = ip
+            count+=1
+        write_cfg(cfg)
 
     time.sleep(15)
 
@@ -769,7 +798,7 @@ def run_benchmark(nodes):
     #     ssh_client.run("chmod 400 " + "$HOME/" + PRIVATE_KEY_NAME)
 
     # LANCIARE BENCHMARK
-    if HDFS == 0:
+    if current_cluster == 'spark':
         if len(BENCHMARK_PERF) > 0:
             print("Running Benchmark " + str(BENCHMARK_PERF))
             runout, runerr, runstatus = ssh_client.run(
@@ -783,13 +812,13 @@ def run_benchmark(nodes):
             output_folder = logfolder[1:]
 
         for bench in BENCHMARK_BENCH:
-            ssh_client.run('rm -r ./spark-bench/num/*')
 
-            for config in BENCH_CONF[bench]:
-                if config != "NumTrials":
+
+            for bc in BENCH_CONF[bench]:
+                if bc != "NumTrials":
                     ssh_client.run(
                         "sed -i '{0}s/.*/{1}={2}/' ./spark-bench/{3}/conf/env.sh""".format(
-                            BENCH_CONF[bench][config][0], config, BENCH_CONF[bench][config][1],
+                            BENCH_CONF[bench][bc][0], bc, BENCH_CONF[bench][bc][1],
                             bench))
 
             if DELETE_HDFS:
@@ -810,11 +839,14 @@ def run_benchmark(nodes):
                                      output_folder, CONFIG_DICT)
 
         write_config(output_folder)
+        print("Saving output folder {}".format(os.path.abspath(output_folder)))
+        cfg['main']['output_folder'] = os.path.abspath(output_folder)
+        write_cfg(cfg)
 
         # PLOT LOGS
-        plot.plot(output_folder + "/")
+#        plot.plot(output_folder + "/")
 
         # COMPUTE METRICS
-        metrics.compute_metrics(output_folder + "/")
+#        metrics.compute_metrics(output_folder + "/")
 
         print("\nCHECK VALUE OF SCALE FACTOR AND PREV SCALE FACTOR FOR HDFS CASE")

@@ -136,3 +136,8 @@ ENV/
 
 results/
 spark-bench/
+\.idea/
+
+spark_log_profiling/input_logs/
+
+.DS_STORE

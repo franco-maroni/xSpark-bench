@@ -185,7 +185,7 @@ def check_spot_price(driver, config):
         exit(1)
 
 
-def launch_libcloud(driver, num_instance, config):
+def launch_libcloud(driver, num_instance, config, cluster_id=CLUSTER_ID, assume_yes=False):
     """Launch num_instance instances on the desired provider given by the driver, using a provider depended config
 
     :param driver: the desired provider driver
@@ -193,7 +193,8 @@ def launch_libcloud(driver, num_instance, config):
     :param config: the configuration dictionary of the user
     :return: list of the created nodes, if provider AWS_SPOT also list of spot request is returned
     """
-    if query_yes_no("Are you sure to launch " + str(num_instance) + " new instance?", "no"):
+    proceed = True if assume_yes else query_yes_no("Are you sure to launch " + str(num_instance) + " new instances on " + cluster_id + "?", "no")
+    if proceed:
         if (PROVIDER == "AWS_SPOT"):
             check_spot_price(driver, config)
 
@@ -401,7 +402,7 @@ def launch_libcloud(driver, num_instance, config):
 
             # public ips
             print("Create public ips")
-            public_ips = [driver.ex_create_public_ip(name="{}ip{}".format(CLUSTER_ID, i),
+            public_ips = [driver.ex_create_public_ip(name="{}ip{}".format(cluster_id, i),
                                                     #name="testip",
                                                      resource_group=config["Azure"]["ResourceGroup"]) for i in
                           range(num_instance)]
@@ -409,7 +410,7 @@ def launch_libcloud(driver, num_instance, config):
             # network interface
             print("Create network interfaces")
             network_interfaces = [
-                driver.ex_create_network_interface(name="{}nic{}".format(CLUSTER_ID, i),
+                driver.ex_create_network_interface(name="{}nic{}".format(cluster_id, i),
                                                    #name="testnic",
                                                    subnet=subnet,
                                                    resource_group=config["Azure"]["ResourceGroup"],
@@ -427,7 +428,7 @@ def launch_libcloud(driver, num_instance, config):
 
             # create nodes
             print("Beginning node creation")
-            nodes = [driver.create_node(name="{}node{}".format(CLUSTER_ID, i),
+            nodes = [driver.create_node(name="{}node{}".format(cluster_id, i),
                                         #name="vm",
                                         size=size,
                                         image=image,

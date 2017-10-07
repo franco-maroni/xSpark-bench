@@ -14,28 +14,27 @@ PROVIDER = "AZURE"
 """Provider to be used"""
 print("Provider : " + PROVIDER)
 
-AZ_LOCATION = 'westeurope'
+AZ_LOCATION = 'southcentralus'
 """AZURE Datacenter Location"""
 # AZ_SIZE = 'Basic_A2'
-# AZ_SIZE = 'Standard_G3'
 AZ_SIZE = 'Standard_D14_v2_Promo'
 """AZURE VM Size"""
 AZ_IMAGE = 'Canonical:UbuntuServer:14.04.5-LTS:14.04.201703230'
 """AZURE VM Image"""
-AZ_VHD_IMAGE = {"StorageAccount": "csparkdisks2",
-                "BlobContainer": "vhds",
+AZ_VHD_IMAGE = {"StorageAccount": "xsparkstoragefranco",
+                "BlobContainer": "vhd-franco",
                 "Name": "vm-os.vhd"}  # csparkvm13-os.vhd
 """AZURE VHD Image"""
 # ssh-keygen -t rsa -b 2048
-AZ_KEY_NAME = "id_rsa"
+AZ_KEY_NAME = "az_id_rsa"
 """Name of the RSA 2048 key"""
-AZ_PUB_KEY_PATH = 'C:\\Users\\Simone Ripamonti\\Desktop\\' + AZ_KEY_NAME + '.pub'
+AZ_PUB_KEY_PATH = '/Users/francesco/.ssh/' + AZ_KEY_NAME + '.pub'
 """AZURE Public Key Path (RSA 2048)"""
-AZ_PRV_KEY_PATH = 'C:\\Users\\Simone Ripamonti\\Desktop\\' + AZ_KEY_NAME
+AZ_PRV_KEY_PATH = '/Users/francesco/.ssh/' + AZ_KEY_NAME
 """AZURE Private Key Path (RSA 2048)"""
-AZ_RESOURCE_GROUP = 'cspark'
+AZ_RESOURCE_GROUP = 'xSpark-franco'
 """AZURE Resource Group"""
-AZ_STORAGE_ACCOUNT = 'csparkdisks2'
+AZ_STORAGE_ACCOUNT = 'xsparkstoragefranco'
 """AZURE Storage Group"""
 AZ_SA_SKU = "standard_lrs"
 """AZURE Storage SKU"""
@@ -84,21 +83,23 @@ CLUSTER_ID = "CSPARKWORK"
 # CLUSTER_ID = "CSPARKHDFS"
 # CLUSTER_ID = "DEV"
 """Id of the cluster with the launched instances"""
-print("Cluster ID : " + str(CLUSTER_ID))
+# print("Cluster ID : " + str(CLUSTER_ID))
+
 TAG = [{
     "Key": "ClusterId",
     "Value": CLUSTER_ID
 }]
 
+
 # HDFS
 # HDFS_MASTER = "ec2-52-88-156-209.us-west-2.compute.amazonaws.com"
-HDFS_MASTER = "10.0.0.5"  # use private ip for azure!
 # HDFS_MASTER = ""
+HDFS_MASTER = "10.0.0.4"  # use private ip for azure!
 """Url of the HDFS NameNode if not set the cluster created is an HDFS Cluster"""
 # Spark config
 SPARK_2_HOME = "/opt/spark/"
 C_SPARK_HOME = "/usr/local/spark/"
-SPARK_HOME = C_SPARK_HOME
+SPARK_HOME = SPARK_2_HOME  # C_SPARK_HOME
 """Location of Spark in the ami"""
 
 LOG_LEVEL = "INFO"
@@ -177,8 +178,8 @@ BENCHMARK_PERF = [
 """Spark-perf benchmark to execute"""
 
 BENCHMARK_BENCH = [
-    # "PageRank",
-    "DecisionTree",
+     "PageRank",
+    # "DecisionTree",
     # "KMeans",
     # "SVM"
 ]
@@ -386,13 +387,14 @@ TEMPORARY_STORAGE = "/dev/xvdb" if PROVIDER == "AWS_SPOT" \
     else None
 
 # Print what will run
+'''
 print("Schedule : "
       + ("LAUNCH, " if (NUM_INSTANCE > 0) else "")
       + ("REBOOT, " if (REBOOT) else "")
       + ("RUN( " if (RUN) else "")
       + ("HDFS )" if (HDFS_MASTER == "" and RUN) else "SPARK )" if (RUN) else "")
       + ("TERMINATE" if (TERMINATE) else ""))
-
+'''
 UPDATE_SPARK_BENCH = False
 UPDATE_SPARK_PERF = False
 

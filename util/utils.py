@@ -1,6 +1,10 @@
 import time
 from datetime import datetime as dt
 from functools import wraps
+import configparser
+import os
+from config import CLUSTERS_CFG
+
 
 
 def between(value, start_a, end_b):
@@ -56,3 +60,14 @@ def string_to_datetime(time_string):
         return dt(2016, 1, 1, int(split[0]), int(split[1]), int(split_2[0]), int(split_2[1]))
     else:
         return dt(2016, 1, 1, int(split[0]), int(split[1]), int(split[2]), 0)
+
+
+def get_cfg():
+    cfg = configparser.ConfigParser()
+    cfg.read(CLUSTERS_CFG)
+    return cfg
+
+
+def write_cfg(cfg):
+    with open(CLUSTERS_CFG, 'w') as cfg_file:
+        cfg.write(cfg_file)
