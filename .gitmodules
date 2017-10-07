@@ -1,0 +1,6 @@
+[submodule "spark_time_analysis"]
+	path = spark_time_analysis
+	url = https://github.com/franco-maroni/spark_time_analysis
+[submodule "spark_log_profiling"]
+	path = spark_log_profiling
+	url = https://github.com/ElfoLiNk/spark-log-profiling
