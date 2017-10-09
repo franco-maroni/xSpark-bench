@@ -1,4 +1,10 @@
 from enum import Enum
+import os
+
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+CLUSTERS_CFG_FILENAME = 'cfg_clusters.ini'
+CLUSTERS_CFG_PATH = os.path.join(ROOT_DIR, CLUSTERS_CFG_FILENAME)
+
 
 class Heuristic(Enum):
     CONTROL = 0

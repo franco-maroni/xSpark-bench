@@ -317,7 +317,8 @@ def setup_master(node, slaves_ip, hdfs_master):
     current_cluster = cfg['main']['current_cluster']
     cfg[current_cluster] = {}
 
-    input_record = cfg['pagerank']['numV'] if 'pagerank' in cfg and 'numV' in cfg['pagerank'] else INPUT_RECORD
+    input_record = cfg['pagerank']['num_v'] if 'pagerank' in cfg and 'num_v' in cfg['pagerank'] else INPUT_RECORD
+    print("input_record: {}".format(input_record))
     ssh_client = sshclient_from_node(node, ssh_key_file=PRIVATE_KEY_PATH, user_name='ubuntu')
 
     print("Setup Master: PublicIp=" + node.public_ips[0] + " PrivateIp=" + node.private_ips[0])
@@ -775,8 +776,6 @@ def run_benchmark(nodes, hdfs_master=HDFS_MASTER):
         slaves = [get_ip(i) for i in nodes[:end_index]]
         slaves.remove(master_ip)
         setup_hdfs_config(master_node, slaves, hdfs_master)
-#        cfg['hdfs'] = {}
-#        cfg['hdfs']['master_ip'] = master_ip
         count = 1
         for ip in slaves:
             cfg['hdfs']['slave'+str(count)+'_ip'] = ip
@@ -841,7 +840,9 @@ def run_benchmark(nodes, hdfs_master=HDFS_MASTER):
         write_config(output_folder)
         print("Saving output folder {}".format(os.path.abspath(output_folder)))
         cfg['main']['output_folder'] = os.path.abspath(output_folder)
+        # Saving cfg on project home directory and output folder
         write_cfg(cfg)
+        write_cfg(cfg, output_folder)
 
         # PLOT LOGS
 #        plot.plot(output_folder + "/")

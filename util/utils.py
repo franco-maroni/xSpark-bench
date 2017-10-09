@@ -3,7 +3,7 @@ from datetime import datetime as dt
 from functools import wraps
 import configparser
 import os
-from config import CLUSTERS_CFG
+from config import CLUSTERS_CFG_PATH, ROOT_DIR, CLUSTERS_CFG_FILENAME
 
 
 
@@ -64,10 +64,10 @@ def string_to_datetime(time_string):
 
 def get_cfg():
     cfg = configparser.ConfigParser()
-    cfg.read(CLUSTERS_CFG)
+    cfg.read(CLUSTERS_CFG_PATH)
     return cfg
 
 
-def write_cfg(cfg):
-    with open(CLUSTERS_CFG, 'w') as cfg_file:
+def write_cfg(cfg, output_path=ROOT_DIR):
+    with open(os.path.join(output_path, CLUSTERS_CFG_FILENAME), 'w') as cfg_file:
         cfg.write(cfg_file)

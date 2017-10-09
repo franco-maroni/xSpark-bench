@@ -185,12 +185,11 @@ def run_log_profiling(local):
     profiling.main(out_folder)
 
 
-def run_time_analysis(local):
-    out_folder = None
-    if not local:
+def run_time_analysis(input_dir):
+    if not input_dir:
         cfg = utils.get_cfg()
-        out_folder = cfg['main']['output_folder'] if 'main' in cfg and 'output_folder' in cfg['main'] else None
-    run_ta.main(out_folder)
+        input_dir = cfg['main']['output_folder'] if 'main' in cfg and 'output_folder' in cfg['main'] else None
+    run_ta.main(input_dir)
 
 
 def setup(args):
@@ -236,7 +235,7 @@ def launch_exp(args):
     for v in num_v:
         cfg = utils.get_cfg()
         cfg['pagerank'] = {}
-        cfg['pagerank']['numV'] = v
+        cfg['pagerank']['num_v'] = v
         utils.write_cfg(cfg)
         print(bold('Launch Experiments on {} with {} vertices...'.format(cluster_id, v)))
         run_xspark(current_cluster='spark', num_instance=0, cluster_id=cluster_id, run=1, terminate=0, reboot=0)
@@ -249,7 +248,7 @@ def log_profiling(args):
 
 
 def time_analysis(args):
-    run_time_analysis(args.local)
+    run_time_analysis(args.input_dir)
 
 
 def main():
@@ -295,9 +294,9 @@ def main():
                                       help="use default local output folders"
                                            "[default: %(default)s]")
 
-    parser_time_analysis.add_argument("-l", "--local", dest="local", action="store_true",
-                                      help="use default local output folders"
-                                           "[default: %(default)s]")
+    parser_time_analysis.add_argument("-i", "--input-dir", dest="input_dir",
+                                      help="input directory (where all the log files are located)"
+                                           "[default: load from config file latest benchmark directory")
 
     '''
     parser_profile.add_argument('exp_file_path', help='experiment file path')
