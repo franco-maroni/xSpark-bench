@@ -8,6 +8,7 @@ Module that handles the cluster log:
 
 import multiprocessing
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime as dt
 from datetime import timedelta
@@ -18,6 +19,7 @@ from util.ssh_client import sshclient_from_node
 
 import run
 
+
 def download_master(node, output_folder, log_folder, config):
     """Download log from master instance
 
@@ -26,7 +28,7 @@ def download_master(node, output_folder, log_folder, config):
     :param log_folder: log folder on the master instance
     :return: output_folder and the app_id: the application id
     """
-
+    bzip_output_folder = "spark_log_profiling/input_logs"
     ssh_client = sshclient_from_node(node, ssh_key_file=PRIVATE_KEY_PATH, user_name='ubuntu')
 
     app_id = ""
@@ -46,12 +48,14 @@ def download_master(node, output_folder, log_folder, config):
         print("Bzipping event log...")
         ssh_client.run("pbzip2 -9 -p" + str(
             config["Control"]["CoreVM"]) + " -c " + input_file + " > " + output_bz)
-        ssh_client.get(remotepath=output_bz, localpath=output_folder + "/" + file + ".bz")
+        ssh_client.get(remotepath=output_bz, localpath=bzip_output_folder + "/" + file + ".bz")
     for file in ssh_client.listdir(log_folder):
-        print(file)
-        if file != "bench-report.dat":
-            output_file = (output_folder + "/" + file).replace(":", "-")
-            ssh_client.get(remotepath=log_folder + "/" + file, localpath=output_file)
+        if file != 'old':
+            print(file)
+            if file != "bench-report.dat":
+                default_file = re.sub('.+(_run_.dat)$', 'app.dat', file)
+                output_file = (output_folder + "/" + default_file).replace(":", "-")
+                ssh_client.get(remotepath=log_folder + "/" + file, localpath=output_file)
     return output_folder, app_id
 
 
