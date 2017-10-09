@@ -238,6 +238,7 @@ def setup_slave(node, master_ip, count):
     slave_ip = get_ip(node)
 
     cfg[current_cluster]['slave'+count+'_ip'] = slave_ip
+    write_cfg(cfg)
 
     common_setup(ssh_client)
 
@@ -325,7 +326,9 @@ def setup_master(node, slaves_ip, hdfs_master):
     master_ip = get_ip(node)
 
     # save private master_ip to cfg file
+    print('saving master ip')
     cfg[current_cluster]['master_ip'] = master_ip
+    write_cfg(cfg)
 
     common_setup(ssh_client)
 
