@@ -6,6 +6,7 @@ import json
 import multiprocessing
 import time
 from concurrent.futures import ThreadPoolExecutor
+from ast import literal_eval
 
 import log
 import metrics
@@ -237,8 +238,8 @@ def setup_slave(node, master_ip, count):
 
     slave_ip = get_ip(node)
 
-    cfg[current_cluster]['slave'+count+'_ip'] = slave_ip
-    write_cfg(cfg)
+    # cfg[current_cluster]['slave'+count+'_ip'] = slave_ip
+    # write_cfg(cfg)
 
     common_setup(ssh_client)
 
@@ -492,8 +493,7 @@ def setup_master(node, slaves_ip, hdfs_master):
 
         ssh_client.run(
             "sed -i '54s{.*{spark.control.inputrecord " + str(
-                input_record) + "{' " + SPARK_HOME + "conf/spark-defaults.conf")
-
+                INPUT_RECORD) + "{' " + SPARK_HOME + "conf/spark-defaults.conf")
         ssh_client.run(
             "sed -i '55s{.*{spark.control.numtask " + str(
                 NUM_TASK) + "{' " + SPARK_HOME + "conf/spark-defaults.conf")
@@ -600,7 +600,6 @@ def setup_master(node, slaves_ip, hdfs_master):
             'export SPARK_HOME="{d}" && {d}sbin/start-master.sh -h {0}'.format(
                 master_ip, d=SPARK_HOME))
 
-    write_cfg(cfg)
     return master_ip, node
 
 
@@ -779,10 +778,11 @@ def run_benchmark(nodes, hdfs_master=HDFS_MASTER):
         slaves = [get_ip(i) for i in nodes[:end_index]]
         slaves.remove(master_ip)
         setup_hdfs_config(master_node, slaves, hdfs_master)
+        cfg = get_cfg()
         count = 1
         for ip in slaves:
             cfg['hdfs']['slave'+str(count)+'_ip'] = ip
-            count+=1
+            count += 1
         write_cfg(cfg)
 
     time.sleep(15)
@@ -801,6 +801,12 @@ def run_benchmark(nodes, hdfs_master=HDFS_MASTER):
 
     # LANCIARE BENCHMARK
     if current_cluster == 'spark':
+        if 'pagerank' in cfg and 'num_v' in cfg['pagerank']:
+            BENCH_CONF["PageRank"]["numV"] = literal_eval(cfg['pagerank']['num_v'])
+            BENCH_CONF["PageRank"]["NUM_OF_PARTITIONS"] = (3, 320)
+            print('setting numV as {}'.format(BENCH_CONF["PageRank"]["numV"]))
+            print('setting NUM_OF_PARTITIONS as {}'.format(BENCH_CONF["PageRank"]["NUM_OF_PARTITIONS"]))
+
         if len(BENCHMARK_PERF) > 0:
             print("Running Benchmark " + str(BENCHMARK_PERF))
             runout, runerr, runstatus = ssh_client.run(
@@ -842,7 +848,7 @@ def run_benchmark(nodes, hdfs_master=HDFS_MASTER):
 
         write_config(output_folder)
         print("Saving output folder {}".format(os.path.abspath(output_folder)))
-        cfg['main']['output_folder'] = os.path.abspath(output_folder)
+        cfg['out_folders']['output_folder_'+str(len(cfg['out_folders']))] = os.path.abspath(output_folder)
         # Saving cfg on project home directory and output folder
         write_cfg(cfg)
         write_cfg(cfg, output_folder)

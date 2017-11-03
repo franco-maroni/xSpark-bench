@@ -118,12 +118,16 @@ def wait_for_running_libcloud(driver, instance_ids, pending_instance_ids):
             pending_instance_ids.pop(pending_instance_ids.index(node.id))
             print("node {} running!".format(node.id))
         else:
+            if node.state == NodeState.ERROR:
+                print("error detected while launching node {}!\naborting...".format(node.id))
+                return False
             print("waiting on {}".format(node.id))
     if len(pending_instance_ids) == 0:
         print("all nodes running")
+        return True
     else:
         time.sleep(10)
-        wait_for_running_libcloud(driver, instance_ids, pending_instance_ids)
+        return wait_for_running_libcloud(driver, instance_ids, pending_instance_ids)
 
 
 def wait_for_fulfillment_libcloud(driver, request_ids, pending_request_ids):

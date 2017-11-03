@@ -32,15 +32,20 @@ def download_master(node, output_folder, log_folder, config):
     ssh_client = sshclient_from_node(node, ssh_key_file=PRIVATE_KEY_PATH, user_name='ubuntu')
 
     app_id = ""
-    for file in ssh_client.listdir("" + config["Spark"]["SparkHome"] + "spark-events/"):
+    files_list = ssh_client.listdir("" + config["Spark"]["SparkHome"] + "spark-events/")
+    # get the latest app id and download all the files in the folder having that name.
+    latest_app_id = max(files_list)
+    download_folder = os.path.join(output_folder, latest_app_id)
+    for file in files_list:
         print("BENCHMARK: " + file)
         print("LOG FOLDER: " + log_folder)
-        print("OUTPUT FOLDER: " + output_folder)
+        print("DOWNLOAD FOLDER: " + download_folder)
         app_id = file
-        if log_folder != output_folder:
-            output_folder = output_folder + app_id
+
+#        if log_folder != output_folder:
+#            output_folder = output_folder + app_id
         try:
-            os.makedirs(output_folder)
+            os.makedirs(download_folder)
         except FileExistsError:
             print("Output folder already exists")
         input_file = config["Spark"]["SparkHome"] + "spark-events/" + file
@@ -48,15 +53,15 @@ def download_master(node, output_folder, log_folder, config):
         print("Bzipping event log...")
         ssh_client.run("pbzip2 -9 -p" + str(
             config["Control"]["CoreVM"]) + " -c " + input_file + " > " + output_bz)
-        ssh_client.get(remotepath=output_bz, localpath=bzip_output_folder + "/" + file + ".bz")
+        ssh_client.get(remotepath=output_bz, localpath=os.path.join(download_folder, file + ".bz"))
     for file in ssh_client.listdir(log_folder):
         if file != 'old':
             print(file)
             if file != "bench-report.dat":
                 default_file = re.sub('.+(_run_.dat)$', 'app.dat', file)
-                output_file = (output_folder + "/" + default_file).replace(":", "-")
+                output_file = (download_folder + "/" + default_file).replace(":", "-")
                 ssh_client.get(remotepath=log_folder + "/" + file, localpath=output_file)
-    return output_folder, app_id
+    return download_folder, app_id
 
 
 def download_slave(node, output_folder, app_id, config):
