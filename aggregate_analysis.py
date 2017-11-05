@@ -71,7 +71,7 @@ def time_analysis(input_dir):
             exp_report[num_v]['GQ_executor'].append(job['GQ_executor'])
             exp_report[num_v]['master_divided_by_avg_gq_profiled'].append(job['total_ta_master_stages'] / AVG_GQ_PROFILED)
             for k in stages.keys():
-                exp_report[num_v]['t_record_S'+str(k)].append(stages[k]['record_processing_time'])
+                exp_report[num_v]['t_record_S'+str(k)].append(stages[k]['t_record_ta_master'])
                 exp_report[num_v]['GQ_S'+str(k)].append(stages[k]['s_GQ'])
         else:
             exp_report[num_v] = {}
@@ -85,17 +85,18 @@ def time_analysis(input_dir):
             exp_report[num_v]['GQ_executor'] = [job['GQ_executor']]
             exp_report[num_v]['master_divided_by_avg_gq_profiled'] = [job['total_ta_master_stages'] / AVG_GQ_PROFILED]
             for k in stages.keys():
-                exp_report[num_v]['t_record_S'+str(k)] = [stages[k]['record_processing_time']]
+                exp_report[num_v]['t_record_S'+str(k)] = [stages[k]['t_record_ta_master']]
                 exp_report[num_v]['GQ_S'+str(k)] = [stages[k]['s_GQ']]
 
     res = {}
     # compute average of all the statistics
     for k, v in exp_report.items():
-        # print('{} {}'.format(k, v))
+        # (k, v) -> (num_v, stat)
         res[k] = {}
         for j in v.keys():
-            res[k]['avg_' + str(j)] = reduce(lambda x, y: x + y, v[j]) / len(v[j])
+            res[k]['avg_' + str(j)] = np.mean(v[j])  # reduce(lambda x, y: x + y, v[j]) / len(v[j])
             res[k]['std_' + str(j)] = np.std(v[j])
+
 
     x_axis = list(res.keys())
     x_axis.sort()
@@ -173,7 +174,7 @@ if __name__ == "__main__":
             time_analysis(input_dir=in_dir)
         elif app_type == 'pro':
             for dir in glob.glob(os.path.join(in_dir, 'app-*')):
-                profiling.main(input_dir=dir, json_out_dir=dir)
+                profiling.main(input_dir=dir, json_out_dir=dir, reprocess=True)
         else:
             print('Invalid app_type! allowed values: ta | pro), inserted value: {}', app_type)
     else:
