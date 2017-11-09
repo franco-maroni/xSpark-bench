@@ -27,10 +27,10 @@ def run_xspark(current_cluster, num_instance=NUM_INSTANCE, num_run=NUM_RUN, clus
     print(header('run_xspark(num_instance={}, num_run={}, cluster_id={},terminate={}, run={}, reboot={})'
           .format(num_instance, num_run, cluster_id, terminate, run, reboot)))
     # get cfg_file and initialize main settings
-    cfg = utils.get_cfg()
-    cfg['main'] = {}
-    cfg.set('main', 'current_cluster', current_cluster)
-    utils.write_cfg(cfg)
+    with utils.open_cfg(mode='w') as cfg:
+        if 'main' not in cfg:
+            cfg['main'] = {}
+        cfg.set('main', 'current_cluster', current_cluster)
 
     bench_instance = BenchInstanceFactory.get_bench_instance(PROVIDER, cluster_id)
     setup_ok = True
@@ -66,9 +66,8 @@ def kill_cluster(cluster):
     cluster_id = CLUSTER_MAP[cluster]
     print(bold('Terminate {}...'.format(cluster_id)))
     run_xspark(current_cluster=cluster, num_instance=0, cluster_id=cluster_id, run=0, terminate=1, reboot=0)
-    cfg = utils.get_cfg()
-    cfg[cluster] = {}
-    utils.write_cfg(cfg)
+    with utils.open_cfg(mode='w') as cfg:
+        cfg[cluster] = {}
 
 
 def run_log_profiling(local):
@@ -93,7 +92,6 @@ def run_time_analysis(input_dir):
                 run_ta.main(input_dir)
     else:
         run_ta.main(input_dir)
-
 
 
 def run_check_cluster(cluster):
@@ -144,11 +142,14 @@ def launch_exp(args):
     cluster_id = CLUSTER_MAP['spark']
     num_v = args.num_v
     num_run = args.num_runs
+    max_executors = args.max_executors
     for v in num_v:
-        cfg = utils.get_cfg()
-        cfg['pagerank'] = {}
-        cfg['pagerank']['num_v'] = '(2, ' + v + ')'
-        utils.write_cfg(cfg)
+        with utils.open_cfg(mode='w') as cfg:
+            cfg['pagerank'] = {}
+            cfg['pagerank']['num_v'] = '(2, ' + v + ')'
+            if max_executors:
+                cfg['main'] = {}
+                cfg['main']['max_executors'] = max_executors
         print(bold('Launch {} Experiments on {} with {} vertices...'.format(num_run, cluster_id, v)))
         run_xspark(current_cluster='spark', num_instance=0, num_run=num_run,
                    cluster_id=cluster_id, run=1, terminate=0, reboot=0)
@@ -209,6 +210,10 @@ def main():
 
     parser_terminate.add_argument('cluster', choices=['hdfs', 'spark', 'all'], help='The specified cluster')
 
+    parser_launch_exp.add_argument('-e', '--executors', default=None, type=int, dest='max_executors',
+                                   help='Maximum number of executors to be used in the experiments. '
+                                        'If None, the number of executor will be equal to (number of Spark nodes - 1) '
+                                        '[default: %(default)s]')
     parser_launch_exp.add_argument('-v', '--num-v', dest='num_v', nargs='+', required=True, help="number of vertices")
     parser_launch_exp.add_argument('-r', '--num-runs', default=1, type=int, dest='num_runs',
                                    help='Number of runs for each configuration')
@@ -251,7 +256,6 @@ def main():
 
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
-
 
     try:
         getattr(args, "func")

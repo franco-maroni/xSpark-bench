@@ -71,3 +71,23 @@ def get_cfg():
 def write_cfg(cfg, output_path=ROOT_DIR):
     with open(os.path.join(output_path, CLUSTERS_CFG_FILENAME), 'w') as cfg_file:
         cfg.write(cfg_file)
+
+
+class open_cfg:
+    """
+    context manager to open and automatically save config files
+    """
+    def __init__(self, r_path=CLUSTERS_CFG_PATH, mode='r', w_path=None):
+        self.cfg = configparser.ConfigParser()
+        self.r_path = r_path
+        self.w_path = w_path if w_path else r_path
+        self.cfg.read(self.r_path)
+        self.mode = mode
+
+    def __enter__(self):
+        return self.cfg
+
+    def __exit__(self, type, value, traceback):
+        if self.mode == 'w':
+            with open(os.path.join(self.w_path), 'w') as cfg_file:
+                self.cfg.write(cfg_file)

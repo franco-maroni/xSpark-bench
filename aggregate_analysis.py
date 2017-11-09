@@ -9,10 +9,96 @@ import plotly.graph_objs as go
 from functools import reduce
 import numpy as np
 import plotly.offline as offline
+import argparse
+import spark_time_analysis.cfg as ta_cfg
+import json
 
-AVG_GQ_PROFILED = 0.8761182608384832
+AVG_GQ_PROFILED = 0.8461182608384832
 
 
+def compute_t_task(stages_struct, num_records, num_task=None):
+    """
+    computes t_task for all the stages and modifies stages_struct to include it.
+    :param stages_struct: data structure containing the
+    :param num_records: total number of input records
+    :param num_task: number of tasks for each stages (currently uniform)
+    """
+    reads = {}
+    writes = {}
+    stage_id_list = [int(x) for x in stages_struct.keys()]
+    stage_id_list.sort()
+    for i in stage_id_list:  # range(0, len(stages_struct)):
+        stage = stages_struct[str(i)]
+        stage_id = str(i)
+        if len(stage['parentsIds']) == 0:
+            print(stage_id)
+            if not num_records:
+                num_records = stage['actual_records_read']
+            reads[stage_id] = num_records
+        else:
+            reads[stage_id] = 0
+            print(stage_id)
+            for parent_id in stage['parentsIds']:
+                reads[stage_id] += writes[str(parent_id)]
+        writes[stage_id] = reads[stage_id] * stage['avg_io_factor']
+        if not num_task:
+            num_task = stage['numtask']
+        stage['t_task'] = round(stage['avg_t_record'] * reads[stage_id] / (num_task * stage['avg_gq']), 4)
+        stage['records_read'] = reads[stage_id]
+        #stage['t_task'] = round(stage['avg_t_record'] * reads[stage_id] / num_task, 4)
+
+
+def generate_spark_context(app_dir, app_name, num_records, num_cores, deadline, profiled_stages, avg_gq, avg_t_record, avg_io):
+    stages_essential = {}
+    for k, v in profiled_stages.items():
+        stages_essential[k] = {}
+        stages_essential[k]['id'] = v['id']
+        #stages_essential[k]['name'] = v['name']
+        stages_essential[k]['parentsIds'] = v['parent_ids']
+        stages_essential[k]['skipped'] = v['skipped']
+        stages_essential[k]['numtask'] = v['num_task']
+        stages_essential[k]['avg_gq'] = avg_gq[k]
+        stages_essential[k]['avg_t_record'] = avg_t_record[k]
+        stages_essential[k]['avg_io_factor'] = avg_io[k]
+
+    compute_t_task(stages_essential, num_records)
+
+    seq_duration = 0
+    for k, v in stages_essential.items():
+        seq_duration += v['t_task'] * v['numtask'] / num_cores
+
+    deadline = int(seq_duration)
+
+    SPARK_CONTEXT = {
+        "app_name": "{}_c{}_t{}_{}l_d{}_tc_{}_n_rounds_{}".format(app_name,
+                                                                  num_cores,
+                                                                  ta_cfg.TIME_BOUND,
+                                                                  "no_" if ta_cfg.NO_LOOPS else "",
+                                                                  deadline,
+                                                                  "parametric" if ta_cfg.PARAMETRIC_TC else "by20",
+                                                                  "by2"),
+        #        "app_dir_acceleration_0_1000_c48_t40_no-l_d133000_tc_parametric_forall_nrounds_TEST",
+        "verification_params":
+            {
+                "plugin": ta_cfg.PLUGIN,
+                "time_bound": ta_cfg.TIME_BOUND,
+                "parametric_tc": ta_cfg.PARAMETRIC_TC,
+                "no_loops": ta_cfg.NO_LOOPS
+            },
+        "tot_cores": num_cores,
+        "analysis_type": "feasibility",
+        "deadline": deadline,
+        "max_time": deadline,
+        "tolerance": ta_cfg.TOLERANCE,
+        "stages": stages_essential
+    }
+
+
+
+    out_path_context = os.path.join(app_dir, 'test_context.json')
+    print("dumping to {}".format(out_path_context))
+    with open(out_path_context, 'w') as outfile:
+        json.dump(SPARK_CONTEXT, outfile, indent=4, sort_keys=True)
 
 
 def get_scatter(x_axis, res_struct, field1, field2=None):
@@ -55,38 +141,65 @@ def plot_figure(data, title, x_axis_label, y_axis_label):
     #offline.plot(figure_or_data=fig, filename=title+'.html', image='png', image_filename=title)
 
 
-def time_analysis(input_dir):
+def time_analysis(args):
+    input_dir = args.exp_dir
+    user_num_records = args.num_records
+    user_num_cores = args.num_cores
+    user_deadline = args.deadline
+    plot = args.plot
+    analysis_id = input_dir.strip('/').split('/')[-1]
+
+    gq = gq_avg= {}
+    t_records_s = t_record_avg = {}
+    io_factor = io_factor_avg = {}
+    stages_sample = job_sample = None
     exp_report = {}
-    for dir in glob.glob(os.path.join(input_dir, 'app-*')):
-        job, stages = run_ta.main(dir)
-        num_v = job['num_v'][1]
+    for d in glob.glob(os.path.join(input_dir, 'app-*')):
+        ta_job, ta_stages = run_ta.main(d)
+        num_v = ta_job['num_v'][1]
+        if not stages_sample:
+            stages_sample = ta_stages
+            job_sample = ta_job
+        if not gq:
+            gq = gq_avg = {k: {} for k in ta_stages.keys()}
+        if not t_records_s:
+            t_records_s = t_record_avg = {k: {} for k in ta_stages.keys()}
+        if not io_factor:
+            io_factor = io_factor_avg = {k: {} for k in ta_stages.keys()}
+
         if num_v in exp_report:
-            exp_report[num_v]['job_duration'].append(job['actual_job_duration'])
-            exp_report[num_v]['total_ta_executor_stages'].append(job['total_ta_executor_stages'])
-            exp_report[num_v]['total_ta_master_stages'].append(job['total_ta_master_stages'])
-            exp_report[num_v]['total_mean_plus_stddev_stages'].append(job['total_mean_plus_stddev_stages'])
+            exp_report[num_v]['job_duration'].append(ta_job['actual_job_duration'])
+            exp_report[num_v]['total_ta_executor_stages'].append(ta_job['total_ta_executor_stages'])
+            exp_report[num_v]['total_ta_master_stages'].append(ta_job['total_ta_master_stages'])
+            exp_report[num_v]['total_mean_plus_stddev_stages'].append(ta_job['total_mean_plus_stddev_stages'])
             for p in run_ta.PERCENTILES:
-                exp_report[num_v]['total_percentile'+str(p)].append(job['total_percentile'+str(p)])
-            exp_report[num_v]['GQ_master'].append(job['GQ_master'])
-            exp_report[num_v]['GQ_executor'].append(job['GQ_executor'])
-            exp_report[num_v]['master_divided_by_avg_gq_profiled'].append(job['total_ta_master_stages'] / AVG_GQ_PROFILED)
-            for k in stages.keys():
-                exp_report[num_v]['t_record_S'+str(k)].append(stages[k]['t_record_ta_master'])
-                exp_report[num_v]['GQ_S'+str(k)].append(stages[k]['s_GQ'])
+                exp_report[num_v]['total_percentile'+str(p)].append(ta_job['total_percentile'+str(p)])
+            exp_report[num_v]['GQ_master'].append(ta_job['GQ_master'])
+            exp_report[num_v]['GQ_executor'].append(ta_job['GQ_executor'])
+            exp_report[num_v]['master_divided_by_avg_gq_profiled'].append(ta_job['total_ta_master_stages'] / AVG_GQ_PROFILED)
+            for k in ta_stages.keys():
+                exp_report[num_v]['t_record_S'+str(k)].append(ta_stages[k]['t_record_ta_master'])
+                exp_report[num_v]['GQ_S'+str(k)].append(ta_stages[k]['s_GQ_ta_master'])
+                t_records_s[k][num_v].append(ta_stages[k]['t_record_ta_master'])
+                gq[k][num_v].append(ta_stages[k]['s_GQ_ta_master'])
+                io_factor[k][num_v].append(ta_stages[k]['io_factor'])
         else:
             exp_report[num_v] = {}
-            exp_report[num_v]['job_duration'] = [job['actual_job_duration']]
-            exp_report[num_v]['total_ta_executor_stages'] = [job['total_ta_executor_stages']]
-            exp_report[num_v]['total_ta_master_stages'] = [job['total_ta_master_stages']]
-            exp_report[num_v]['total_mean_plus_stddev_stages'] = [job['total_mean_plus_stddev_stages']]
+            exp_report[num_v]['job_duration'] = [ta_job['actual_job_duration']]
+            exp_report[num_v]['total_ta_executor_stages'] = [ta_job['total_ta_executor_stages']]
+            exp_report[num_v]['total_ta_master_stages'] = [ta_job['total_ta_master_stages']]
+            exp_report[num_v]['total_mean_plus_stddev_stages'] = [ta_job['total_mean_plus_stddev_stages']]
             for p in run_ta.PERCENTILES:
-                exp_report[num_v]['total_percentile'+str(p)] = [job['total_percentile'+str(p)]]
-            exp_report[num_v]['GQ_master'] = [job['GQ_master']]
-            exp_report[num_v]['GQ_executor'] = [job['GQ_executor']]
-            exp_report[num_v]['master_divided_by_avg_gq_profiled'] = [job['total_ta_master_stages'] / AVG_GQ_PROFILED]
-            for k in stages.keys():
-                exp_report[num_v]['t_record_S'+str(k)] = [stages[k]['t_record_ta_master']]
-                exp_report[num_v]['GQ_S'+str(k)] = [stages[k]['s_GQ']]
+                exp_report[num_v]['total_percentile'+str(p)] = [ta_job['total_percentile'+str(p)]]
+            exp_report[num_v]['GQ_master'] = [ta_job['GQ_master']]
+            exp_report[num_v]['GQ_executor'] = [ta_job['GQ_executor']]
+            exp_report[num_v]['master_divided_by_avg_gq_profiled'] = [ta_job['total_ta_master_stages'] / AVG_GQ_PROFILED]
+            for k in ta_stages.keys():
+                exp_report[num_v]['t_record_S'+str(k)] = [ta_stages[k]['t_record_ta_master']]
+                exp_report[num_v]['GQ_S'+str(k)] = [ta_stages[k]['s_GQ_ta_master']]
+                t_records_s[k][num_v] = [ta_stages[k]['t_record_ta_master']]
+                gq[k][num_v] = [ta_stages[k]['s_GQ_ta_master']]
+                io_factor[k][num_v] = [ta_stages[k]['io_factor']]
 
     res = {}
     # compute average of all the statistics
@@ -94,89 +207,169 @@ def time_analysis(input_dir):
         # (k, v) -> (num_v, stat)
         res[k] = {}
         for j in v.keys():
-            res[k]['avg_' + str(j)] = np.mean(v[j])  # reduce(lambda x, y: x + y, v[j]) / len(v[j])
+            res[k]['avg_' + str(j)] = np.mean(v[j])
             res[k]['std_' + str(j)] = np.std(v[j])
 
 
-    x_axis = list(res.keys())
-    x_axis.sort()
-    trace_avg_job_duration = get_scatter(x_axis, res, 'avg_job_duration')
-    trace_avg_total_ta_executor_stages = get_scatter(x_axis, res, 'avg_total_ta_executor_stages')
-    trace_avg_total_ta_master_stages = get_scatter(x_axis, res, 'avg_total_ta_master_stages')
-    trace_avg_total_mean_plus_stddev_stages = get_scatter(x_axis, res, 'avg_total_mean_plus_stddev_stages')
-    trace_master_divided_by_avg_gq_profiled = get_scatter(x_axis, res, 'avg_master_divided_by_avg_gq_profiled')
+    print(gq)
+    print(t_records_s)
+    print(io_factor)
+    # compute average per stage for context generation
+    for k in ta_stages.keys():
+        print("t_records:\n{} : {}".format(k, [np.average(v) for k,v in t_records_s[k].items()]))
 
-    trace_list = [trace_avg_job_duration,
-                  trace_avg_total_ta_executor_stages,
-                  trace_avg_total_ta_master_stages,
-                  trace_avg_total_mean_plus_stddev_stages,
-                  trace_master_divided_by_avg_gq_profiled]
-    for p in run_ta.PERCENTILES:
-        trace_list.append(get_scatter(x_axis, res, 'avg_total_percentile'+str(p)))
-
-    data_exec_times = go.Data(trace_list)
-
-    trace_avg_GQ_master = get_scatter(x_axis, res, 'avg_GQ_master')
-    trace_avg_GQ_executor = get_scatter(x_axis, res, 'avg_GQ_executor')
-    data_gq = go.Data([trace_avg_GQ_master, trace_avg_GQ_executor])
-
-    plot_figure(data=data_gq,
-                title='pagerank_GQ_' + input_dir.strip('/').split('/')[-1],
-                x_axis_label="Num Vertices",
-                y_axis_label="GQ Value")
-
-    trace_list_avg_gq = []
-    trace_list_std_gq = []
-    trace_list_avg_t_record = []
-    trace_list_std_t_record = []
-    for k in stages.keys():
-        trace_list_avg_gq.append(get_scatter(x_axis, res, 'avg_GQ_S' + str(k)))
-        trace_list_std_gq.append(get_scatter(x_axis, res, 'std_GQ_S' + str(k)))
-        trace_list_avg_t_record.append(get_scatter(x_axis, res, 'avg_t_record_S' + str(k)))
-        trace_list_std_t_record.append(get_scatter(x_axis, res, 'std_t_record_S' + str(k)))
-
-    data_gq_stages = go.Data(trace_list_avg_gq)
-    data_t_record_stages = go.Data(trace_list_avg_t_record)
-
-    plot_figure(data=data_gq_stages,
-                title='average_GQ_' + input_dir.strip('/').split('/')[-1],
-                x_axis_label="Num Vertices",
-                y_axis_label='Time (ms)')
-
-    plot_figure(data=data_t_record_stages,
-                title='average_record_time_' + input_dir.strip('/').split('/')[-1],
-                x_axis_label="Num Vertices",
-                y_axis_label='Time (ms)')
+        gq_avg[k] = np.average([np.average(v) for k,v in gq[k].items()])
+        t_record_avg[k] = np.average([np.average(v) for k,v in t_records_s[k].items()])
+        io_factor_avg[k] = np.average([np.average(v) for k,v in io_factor[k].items()])
 
 
-    """
-        zipped_job_d_master = zip(trace_avg_job_duration.get('y'), trace_avg_total_ta_master_stages.get('y'))
-        trace_percents_total_master = go.Scatter(
-            x=x_axis,
-            y=[(x-y)/y*100 for x,y in zipped_job_d_master],
-            name='total_master_perc'
-        )
-        data_perc = go.Data([trace_percents_total_master])
+    print(gq_avg)
+    print(t_record_avg)
+    print(io_factor_avg)
 
-        py.plot(data_perc, filename='pagerank_total_master_perc_'+input_dir.strip('/').split('/')[-1])
-    """
-    plot_figure(data=data_exec_times,
-                title='pagerank_execution_times_' + input_dir.strip('/').split('/')[-1],
-                x_axis_label="Num Vertices",
-                y_axis_label='Time (ms)')
+    generate_spark_context(app_dir=input_dir, app_name=analysis_id, num_records=user_num_records,
+                           num_cores=user_num_cores, deadline=user_deadline,
+                           profiled_stages=stages_sample, avg_gq=gq_avg, avg_io=io_factor_avg,
+                           avg_t_record=t_record_avg)
+
+    if plot:
+        x_axis = list(res.keys())
+        x_axis.sort()
+        trace_avg_job_duration = get_scatter(x_axis, res, 'avg_job_duration')
+        trace_avg_total_ta_executor_stages = get_scatter(x_axis, res, 'avg_total_ta_executor_stages')
+        trace_avg_total_ta_master_stages = get_scatter(x_axis, res, 'avg_total_ta_master_stages')
+        trace_avg_total_mean_plus_stddev_stages = get_scatter(x_axis, res, 'avg_total_mean_plus_stddev_stages')
+        trace_master_divided_by_avg_gq_profiled = get_scatter(x_axis, res, 'avg_master_divided_by_avg_gq_profiled')
+
+        trace_list = [trace_avg_job_duration,
+                      trace_avg_total_ta_executor_stages,
+                      trace_avg_total_ta_master_stages,
+                      trace_avg_total_mean_plus_stddev_stages,
+                      trace_master_divided_by_avg_gq_profiled]
+        for p in run_ta.PERCENTILES:
+            trace_list.append(get_scatter(x_axis, res, 'avg_total_percentile'+str(p)))
+
+        data_exec_times = go.Data(trace_list)
+
+        trace_avg_GQ_master = get_scatter(x_axis, res, 'avg_GQ_master')
+        trace_avg_GQ_executor = get_scatter(x_axis, res, 'avg_GQ_executor')
+        data_gq = go.Data([trace_avg_GQ_master, trace_avg_GQ_executor])
+        '''
+        plot_figure(data=data_gq,
+                    title='pagerank_GQ_' + input_dir.strip('/').split('/')[-1],
+                    x_axis_label="Num Vertices",
+                    y_axis_label="GQ Value")
+        '''
+        trace_list_avg_gq = []
+        trace_list_std_gq = []
+        trace_list_avg_t_record = []
+        trace_list_std_t_record = []
+        for k in ta_stages.keys():
+            trace_list_avg_gq.append(get_scatter(x_axis, res, 'avg_GQ_S' + str(k)))
+            trace_list_std_gq.append(get_scatter(x_axis, res, 'std_GQ_S' + str(k)))
+            trace_list_avg_t_record.append(get_scatter(x_axis, res, 'avg_t_record_S' + str(k)))
+            trace_list_std_t_record.append(get_scatter(x_axis, res, 'std_t_record_S' + str(k)))
+
+        data_gq_stages = go.Data(trace_list_avg_gq)
+        data_t_record_stages = go.Data(trace_list_avg_t_record)
+
+        plot_figure(data=data_gq_stages,
+                    title='average_GQ_' + input_dir.strip('/').split('/')[-1],
+                    x_axis_label="Num Vertices",
+                    y_axis_label='Time (ms)')
+
+        plot_figure(data=data_t_record_stages,
+                    title='average_record_time_' + input_dir.strip('/').split('/')[-1],
+                    x_axis_label="Num Vertices",
+                    y_axis_label='Time (ms)')
+
+
+        """
+            zipped_job_d_master = zip(trace_avg_job_duration.get('y'), trace_avg_total_ta_master_stages.get('y'))
+            trace_percents_total_master = go.Scatter(
+                x=x_axis,
+                y=[(x-y)/y*100 for x,y in zipped_job_d_master],
+                name='total_master_perc'
+            )
+            data_perc = go.Data([trace_percents_total_master])
+
+            py.plot(data_perc, filename='pagerank_total_master_perc_'+input_dir.strip('/').split('/')[-1])
+        """
+        plot_figure(data=data_exec_times,
+                    title='pagerank_execution_times_' + input_dir.strip('/').split('/')[-1],
+                    x_axis_label="Num Vertices",
+                    y_axis_label='Time (ms)')
+
+
+def pro_runner(args):
+    reprocess = args.reprocess
+    exp_dir = args.exp_dir
+    for d in glob.glob(os.path.join(exp_dir, 'app-*')):
+        profiling.main(input_dir=d, json_out_dir=d, reprocess=reprocess)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 2:
-        app_type = sys.argv[1]
-        in_dir = os.path.abspath(sys.argv[2])
-        if app_type == 'ta':
-            time_analysis(input_dir=in_dir)
-        elif app_type == 'pro':
-            for dir in glob.glob(os.path.join(in_dir, 'app-*')):
-                profiling.main(input_dir=dir, json_out_dir=dir, reprocess=True)
-        else:
-            print('Invalid app_type! allowed values: ta | pro), inserted value: {}', app_type)
+    parser = argparse.ArgumentParser(
+        description=
+            """
+            Aggregated Analysis Tool for xSparkBench
+            """
+    )
+
+    subparsers = parser.add_subparsers()
+    parser_pro = subparsers.add_parser('pro', help='launch profiling on selected folders')
+    parser_ta = subparsers.add_parser('ta', help='launch_time analysis on selected_folder')
+
+    parser_pro.add_argument("exp_dir", help="directory containing all the experiment files to be analyzed")
+    parser_pro.add_argument("-r", "--reprocess", dest="reprocess", action="store_true",
+                            help="reprocess data (look for logs in processed_logs folders)"
+                                 "[default: %(default)s]")
+
+    parser_ta.add_argument("exp_dir", help="directory containing all the experiment files to be analyzed")
+    parser_ta.add_argument("-p", "--plot", dest="plot", action="store_true",
+                            help="plots the performed analyses"
+                                 "[default: %(default)s]")
+    parser_ta.add_argument("-i", "--input_num_records", dest="num_records", type=int,
+                            help="number of input_records to be considered for the generated json context"
+                                 "[default: %(default)s]")
+
+    parser_ta.add_argument("-c", "--num_cores", dest="num_cores", type=int,
+                            help="number of cores to be considered for the generated json context"
+                                 "[default: %(default)s]")
+
+    parser_ta.add_argument("-d", "--deadline", dest="deadline", type=int,
+                            help="deadline to be considered in json context generation"
+                                 "[default: %(default)s]")
+
+    parser_pro.set_defaults(func=pro_runner)
+    parser_ta.set_defaults(func=time_analysis)
+
+    # TODO add num_records to
+    args = parser.parse_args()
+
+    try:
+        getattr(args, "func")
+    except AttributeError:
+        parser.print_help()
+        sys.exit(0)
+
+    args.func(args)
+    '''
+    mode = args.mode
+    exp_dir = args.exp_dir
+    reprocess = args.reprocess
+    if mode == 'ta':
+        time_analysis(input_dir=exp_dir)
+    elif mode == 'pro':
+        for d in glob.glob(os.path.join(exp_dir, 'app-*')):
+            profiling.main(input_dir=d, json_out_dir=d, reprocess=reprocess)
+    elif mode == 'all':
+        for d in glob.glob(os.path.join(exp_dir, 'app-*')):
+            run_ta.modify_executors(d)
     else:
+        print('Invalid app_type! allowed values: ta | pro), inserted value: {}', mode)
+    '''
+'''
         print('ERROR: You must provide at least two arguments')
         sys.exit(0)
+'''

@@ -4,15 +4,14 @@ This module handle the configuration of the instances and the execution of  the 
 
 import json
 import multiprocessing
+import os
 import time
-from concurrent.futures import ThreadPoolExecutor
 from ast import literal_eval
+from concurrent.futures import ThreadPoolExecutor
 
 import log
-import metrics
-import plot
+from config import PRIVATE_KEY_PATH, PRIVATE_KEY_NAME, TEMPORARY_STORAGE, PROVIDER
 from config import UPDATE_SPARK_DOCKER, DELETE_HDFS, SPARK_HOME, KILL_JAVA, SYNC_TIME, \
-    KEY_PAIR_PATH, \
     UPDATE_SPARK, \
     DISABLE_HT, ENABLE_EXTERNAL_SHUFFLE, OFF_HEAP, OFF_HEAP_BYTES, K, T_SAMPLE, TI, CORE_QUANTUM, \
     CORE_MIN, CPU_PERIOD, \
@@ -20,18 +19,13 @@ from config import UPDATE_SPARK_DOCKER, DELETE_HDFS, SPARK_HOME, KILL_JAVA, SYNC
     LOCALITY_WAIT_NODE, CPU_TASK, \
     LOCALITY_WAIT_PROCESS, LOCALITY_WAIT_RACK, INPUT_RECORD, NUM_TASK, BENCH_NUM_TRIALS, \
     SCALE_FACTOR, RAM_EXEC, \
-    RAM_DRIVER, BENCHMARK_PERF, BENCH_LINES, HDFS_MASTER, DATA_AMI, REGION, HADOOP_CONF, \
+    RAM_DRIVER, BENCHMARK_PERF, BENCH_LINES, HADOOP_CONF, \
     CONFIG_DICT, HADOOP_HOME,\
     SPARK_2_HOME, BENCHMARK_BENCH, BENCH_CONF, LOG_LEVEL, CORE_ALLOCATION,DEADLINE_ALLOCATION,\
     UPDATE_SPARK_BENCH, UPDATE_SPARK_PERF, NUM_INSTANCE, STAGE_ALLOCATION, HEURISTIC
-
-from config import PRIVATE_KEY_PATH, PRIVATE_KEY_NAME, TEMPORARY_STORAGE, PROVIDER
-
-from util.utils import timing, between, get_cfg, write_cfg
-
 from util.ssh_client import sshclient_from_node
+from util.utils import timing, between, get_cfg, write_cfg, open_cfg
 
-import os
 
 # Modifiche fatte
 # - uso di PRIVATE_KEY_PATH anzichè KEY_PAIR_PATH
@@ -311,25 +305,23 @@ def setup_slave(node, master_ip, count):
 @timing
 def setup_master(node, slaves_ip, hdfs_master):
     """
-
     :param node:
     :return:
     """
-    cfg = get_cfg()
-    current_cluster = cfg['main']['current_cluster']
-    cfg[current_cluster] = {}
-
-    input_record = cfg['pagerank']['num_v'] if 'pagerank' in cfg and 'num_v' in cfg['pagerank'] else INPUT_RECORD
-    print("input_record: {}".format(input_record))
     ssh_client = sshclient_from_node(node, ssh_key_file=PRIVATE_KEY_PATH, user_name='ubuntu')
+    with open_cfg(mode='w') as cfg:
+        current_cluster = cfg['main']['current_cluster']
+        cfg[current_cluster] = {}
+        # TODO check if needed
+        input_record = cfg['pagerank']['num_v'] if 'pagerank' in cfg and 'num_v' in cfg['pagerank'] else INPUT_RECORD
+        print("input_record: {}".format(input_record))
 
-    print("Setup Master: PublicIp=" + node.public_ips[0] + " PrivateIp=" + node.private_ips[0])
-    master_ip = get_ip(node)
+        print("Setup Master: PublicIp=" + node.public_ips[0] + " PrivateIp=" + node.private_ips[0])
+        master_ip = get_ip(node)
 
-    # save private master_ip to cfg file
-    print('saving master ip')
-    cfg[current_cluster]['master_ip'] = master_ip
-    write_cfg(cfg)
+        # save private master_ip to cfg file
+        print('saving master ip')
+        cfg[current_cluster]['master_ip'] = master_ip
 
     common_setup(ssh_client)
 
@@ -729,24 +721,25 @@ def check_slave_connected_master(ssh_client):
 
 
 @timing
-def run_benchmark(nodes, hdfs_master=HDFS_MASTER):
+def run_benchmark(nodes):
     """
 
     :return:
     """
-    cfg = get_cfg()
-    current_cluster = cfg['main']['current_cluster']
-    hdfs_master = cfg['hdfs']['master_ip'] if 'hdfs' in cfg and 'master_ip' in cfg['hdfs'] else ''
-    print('HDFS_MASTER from clusters.ini: ' + hdfs_master)
 
     if len(nodes) == 0:
         print("No instances running")
         exit(1)
 
-    end_index = min(len(nodes), MAX_EXECUTOR + 1)
-
-    # TODO: pass slaves ip
-    slaves_ip = [get_ip(i) for i in nodes[1:end_index]]
+    with open_cfg(mode='w') as cfg:
+        current_cluster = cfg['main']['current_cluster']
+        hdfs_master = cfg['hdfs']['master_ip'] if 'hdfs' in cfg and 'master_ip' in cfg['hdfs'] else ''
+        max_executors = int(cfg['main']['max_executors']) if 'main' in cfg and 'max_executors' in cfg['main'] else len(nodes) - 1
+        # print('HDFS_MASTER from clusters.ini: ' + hdfs_master)
+        end_index = min(len(nodes), max_executors + 1)
+        cfg['main']['max_executors'] = str(end_index - 1)
+        # TODO: pass slaves ip
+        slaves_ip = [get_ip(i) for i in nodes[1:end_index]]
 
     master_ip, master_node = setup_master(nodes[0], slaves_ip, hdfs_master)
     if SPARK_HOME == SPARK_2_HOME:
@@ -778,12 +771,11 @@ def run_benchmark(nodes, hdfs_master=HDFS_MASTER):
         slaves = [get_ip(i) for i in nodes[:end_index]]
         slaves.remove(master_ip)
         setup_hdfs_config(master_node, slaves, hdfs_master)
-        cfg = get_cfg()
-        count = 1
-        for ip in slaves:
-            cfg['hdfs']['slave'+str(count)+'_ip'] = ip
-            count += 1
-        write_cfg(cfg)
+        with open_cfg(mode='w') as cfg:
+            count = 1
+            for ip in slaves:
+                cfg['hdfs']['slave'+str(count)+'_ip'] = ip
+                count += 1
 
     time.sleep(15)
 

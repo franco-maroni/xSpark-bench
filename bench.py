@@ -10,27 +10,10 @@ from colors import header, okblue, okgreen, warning, underline, bold, fail
 
 from credentials import AWS_ACCESS_ID, AWS_SECRET_KEY,\
     AZ_APPLICATION_ID, AZ_SECRET, AZ_SUBSCRIPTION_ID, AZ_TENANT_ID
-from config import CONFIG_DICT, PROVIDER, REGION, TAG, NUM_INSTANCE, NUM_RUN, CLUSTER_ID, TERMINATE, RUN, REBOOT
+from config import CONFIG_DICT, PROVIDER, REGION, TAG, NUM_INSTANCE, NUM_RUN, CLUSTER_ID, TERMINATE, RUN, REBOOT, CLUSTER_MAP
 import util.utils as utils
 from spark_log_profiling import processing as profiling
 from spark_time_analysis import run as run_ta
-
-
-def run_log_profiling(local=None):
-    out_dir = None
-    in_dir = None
-    if not local:
-        cfg = utils.get_cfg()
-        in_dir = out_dir = cfg['main']['output_folder'] if 'main' in cfg and 'output_folder' in cfg['main'] else None
-    profiling.main(input_dir=in_dir, json_out_dir=out_dir)
-
-
-def run_time_analysis(input_dir=None):
-    if not input_dir:
-        cfg = utils.get_cfg()
-        input_dir = cfg['main']['output_folder'] if 'main' in cfg and 'output_folder' in cfg['main'] else None
-    run_ta.main(input_dir)
-
 
 class BenchInstance(object):
     driver = None
@@ -64,7 +47,8 @@ class BenchInstance(object):
         cfg['out_folders'] = {}
         utils.write_cfg(cfg)
         for i in range(num_run):
-            print(bold('Experiment ({}/{})'.format(i + 1, num_run)))
+            if self.cluster_id == CLUSTER_MAP['spark']:
+                print(bold('Experiment ({}/{})'.format(i + 1, num_run)))
             self.retrieve_nodes()
             x_run.run_benchmark(self.nodes)
 
