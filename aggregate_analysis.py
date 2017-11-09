@@ -31,13 +31,13 @@ def compute_t_task(stages_struct, num_records, num_task=None):
         stage = stages_struct[str(i)]
         stage_id = str(i)
         if len(stage['parentsIds']) == 0:
-            #print(stage_id)
+            # print(stage_id)
             if not num_records:
                 num_records = stage['actual_records_read']
             reads[stage_id] = num_records
         else:
             reads[stage_id] = 0
-            #print(stage_id)
+            # print(stage_id)
             for parent_id in stage['parentsIds']:
                 reads[stage_id] += writes[str(parent_id)]
         writes[stage_id] = reads[stage_id] * stage['avg_io_factor']
@@ -138,7 +138,7 @@ def plot_figure(data, title, x_axis_label, y_axis_label):
                         y_axis_label)
     fig = go.Figure(data=data, layout=layout)
     py.plot(fig, filename=title)
-    #offline.plot(figure_or_data=fig, filename=title+'.html', image='png', image_filename=title)
+    # offline.plot(figure_or_data=fig, filename=title+'.html', image='png', image_filename=title)
 
 
 def generate_plots(res, stages_keys, input_dir):
@@ -216,13 +216,15 @@ def time_analysis(args):
         if reprocess:  # run time_analysis on d
             ta_job, ta_stages = run_ta.main(d)
         else:  # get precomputed analysis file from d
-            ta_file_path = glob.glob(os.path.join(d, '*_time_analysis.json'))[0]
-            print("getting time_analysis from {}...".format(ta_file_path))
-            with open(ta_file_path) as ta_file:
-                ta_total = json.load(ta_file)
-                ta_job = ta_total['job']
-                ta_stages = ta_total['stages']
-
+            ta_file_paths = glob.glob(os.path.join(d, '*_time_analysis.json'))
+            if ta_file_paths:
+                print("getting time_analysis from {}...".format(ta_file_paths[0]))
+                with open(ta_file_paths[0]) as ta_file:
+                    ta_total = json.load(ta_file)
+                    ta_job = ta_total['job']
+                    ta_stages = ta_total['stages']
+            else:
+                ta_job, ta_stages = run_ta.main(d)
         num_v = ta_job['num_v'][1]
         if not stages_sample:
             stages_sample = ta_stages
