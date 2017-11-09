@@ -795,7 +795,7 @@ def run_benchmark(nodes):
     if current_cluster == 'spark':
         if 'pagerank' in cfg and 'num_v' in cfg['pagerank']:
             BENCH_CONF["PageRank"]["numV"] = literal_eval(cfg['pagerank']['num_v'])
-            BENCH_CONF["PageRank"]["NUM_OF_PARTITIONS"] = (3, 320)
+            BENCH_CONF["PageRank"]["NUM_OF_PARTITIONS"] = (3, 1800)
             print('setting numV as {}'.format(BENCH_CONF["PageRank"]["numV"]))
             print('setting NUM_OF_PARTITIONS as {}'.format(BENCH_CONF["PageRank"]["NUM_OF_PARTITIONS"]))
 

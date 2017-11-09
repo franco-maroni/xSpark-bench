@@ -14,7 +14,9 @@ import spark_time_analysis.cfg as ta_cfg
 import json
 
 AVG_GQ_PROFILED = 0.8461182608384832
-
+DEFAULT_NUM_RECORDS = 1388043081
+DEFAULT_NUM_CORES = 18
+IMGS_FOLDER = 'imgs'
 
 def compute_t_task(stages_struct, num_records, num_task=None):
     """
@@ -137,7 +139,11 @@ def plot_figure(data, title, x_axis_label, y_axis_label):
                         x_axis_label,
                         y_axis_label)
     fig = go.Figure(data=data, layout=layout)
-    py.plot(fig, filename=title)
+    url = py.plot(fig, filename=title, auto_open=False)
+    fig = py.get_figure(url)
+    local_path = os.path.abspath(os.path.join(IMGS_FOLDER, '{}.png'.format(fig['layout']['title'])))
+    print("{} -> local: {}".format(url, local_path))
+    py.image.save_as(fig, local_path)
     # offline.plot(figure_or_data=fig, filename=title+'.html', image='png', image_filename=title)
 
 
@@ -175,7 +181,7 @@ def generate_plots(res, stages_keys, input_dir):
     trace_list_std_t_record = []
     for k in stages_keys:
         trace_list_avg_gq.append(get_scatter(x_axis, res, 'avg_GQ_S' + str(k)))
-        trace_list_std_gq.append(get_scatter(x_axis, res, 'std_GQ_S' + str(k)))
+        trace_list_avg_gq.append(get_scatter(x_axis, res, 'std_GQ_S' + str(k)))
         trace_list_avg_t_record.append(get_scatter(x_axis, res, 'avg_t_record_S' + str(k)))
         trace_list_std_t_record.append(get_scatter(x_axis, res, 'std_t_record_S' + str(k)))
 
@@ -185,7 +191,7 @@ def generate_plots(res, stages_keys, input_dir):
     plot_figure(data=data_gq_stages,
                 title='average_GQ_' + input_dir.strip('/').split('/')[-1],
                 x_axis_label="Num Vertices",
-                y_axis_label='Time (ms)')
+                y_axis_label='Value ([0, 1])')
 
     plot_figure(data=data_t_record_stages,
                 title='average_record_time_' + input_dir.strip('/').split('/')[-1],
@@ -200,12 +206,13 @@ def generate_plots(res, stages_keys, input_dir):
 
 def time_analysis(args):
     input_dir = args.exp_dir
-    user_num_records = args.num_records
-    user_num_cores = args.num_cores
+    user_num_records = args.num_records if args.num_records else DEFAULT_NUM_RECORDS
+    user_num_cores = args.num_cores if args.num_cores else DEFAULT_NUM_CORES
     user_deadline = args.deadline
     plot = args.plot
     analysis_id = input_dir.strip('/').split('/')[-1]
     reprocess = args.reprocess
+    executors = args.executors
 
     gq = gq_avg= {}
     t_records_s = t_record_avg = {}
@@ -213,6 +220,8 @@ def time_analysis(args):
     stages_sample = job_sample = None
     exp_report = {}
     for d in glob.glob(os.path.join(input_dir, 'app-*')):
+        if executors:
+            run_ta.modify_executors(d, executors)
         if reprocess:  # run time_analysis on d
             ta_job, ta_stages = run_ta.main(d)
         else:  # get precomputed analysis file from d
@@ -349,6 +358,10 @@ if __name__ == "__main__":
     parser_ta.add_argument("-d", "--deadline", dest="deadline", type=int,
                             help="deadline to be considered in json context generation"
                                  "[default: %(default)s]")
+
+    parser_ta.add_argument("-e", "--executors", dest="executors", type=int,
+                           help="executors"
+                                "[default: %(default)s]")
 
     parser_pro.set_defaults(func=pro_runner)
     parser_ta.set_defaults(func=time_analysis)
