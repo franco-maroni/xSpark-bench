@@ -4,7 +4,7 @@ from functools import wraps
 import configparser
 import os
 from config import CLUSTERS_CFG_PATH, ROOT_DIR, CLUSTERS_CFG_FILENAME
-
+import errno
 
 
 def between(value, start_a, end_b):
@@ -91,3 +91,12 @@ class open_cfg:
         if self.mode == 'w':
             with open(os.path.join(self.w_path), 'w') as cfg_file:
                 self.cfg.write(cfg_file)
+
+
+def make_sure_path_exists(path):
+    """"Check if the provided path exists. If it does not exist, create it."""
+    try:
+        os.makedirs(path)
+    except OSError as exception:
+        if exception.errno != errno.EEXIST:
+            raise

@@ -145,10 +145,10 @@ def launch_exp(args):
     max_executors = args.max_executors
     for v in num_v:
         with utils.open_cfg(mode='w') as cfg:
+            cfg['main'] = {}
             cfg['pagerank'] = {}
             cfg['pagerank']['num_v'] = '(2, ' + v + ')'
             if max_executors:
-                cfg['main'] = {}
                 cfg['main']['max_executors'] = max_executors
         print(bold('Launch {} Experiments on {} with {} vertices...'.format(num_run, cluster_id, v)))
         run_xspark(current_cluster='spark', num_instance=0, num_run=num_run,

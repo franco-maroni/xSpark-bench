@@ -12,11 +12,14 @@ import plotly.offline as offline
 import argparse
 import spark_time_analysis.cfg as ta_cfg
 import json
+import util.utils as utils
+import shutil
 
 AVG_GQ_PROFILED = 0.8461182608384832
 DEFAULT_NUM_RECORDS = 1388043081
 DEFAULT_NUM_CORES = 18
 IMGS_FOLDER = 'imgs'
+ESSENTIAL_FILES = ['app.json', 'app.dat', 'config.json', '*_time_analysis']
 
 def compute_t_task(stages_struct, num_records, num_task=None):
     """
@@ -204,6 +207,18 @@ def generate_plots(res, stages_keys, input_dir):
                 y_axis_label='Time (ms)')
 
 
+def extract_essential_files(args):
+    input_dir = args.exp_dir
+    analysis_files_dir = '{}_time_analysis'.format(input_dir)
+    utils.make_sure_path_exists(analysis_files_dir)
+    for d in glob.glob(os.path.join(input_dir, 'app-*')):
+        dest_dir = os.path.join(analysis_files_dir, d.split(os.sep)[-1])
+        utils.make_sure_path_exists(dest_dir)
+        for f in ESSENTIAL_FILES:
+            for x in glob.glob(os.path.join(d, f)):
+                shutil.copy(x, dest_dir)
+
+
 def time_analysis(args):
     input_dir = args.exp_dir
     user_num_records = args.num_records if args.num_records else DEFAULT_NUM_RECORDS
@@ -333,7 +348,9 @@ if __name__ == "__main__":
 
     subparsers = parser.add_subparsers()
     parser_pro = subparsers.add_parser('pro', help='launch profiling on selected folders')
-    parser_ta = subparsers.add_parser('ta', help='launch_time analysis on selected_folder')
+    parser_ta = subparsers.add_parser('ta', help='launch time_analysis on selected_folder')
+    parser_ee = subparsers.add_parser('ee', help='extract essential files to carry on further analysis '
+                                                 '({})'.format(ESSENTIAL_FILES))
 
     parser_pro.add_argument("exp_dir", help="directory containing all the experiment files to be analyzed")
     parser_pro.add_argument("-r", "--reprocess", dest="reprocess", action="store_true",
@@ -358,6 +375,10 @@ if __name__ == "__main__":
     parser_ta.add_argument("-d", "--deadline", dest="deadline", type=int,
                             help="deadline to be considered in json context generation"
                                  "[default: %(default)s]")
+    parser_ta.add_argument("-e", "--executors", dest="executors", type=int,
+                           help="executors"
+                                "[default: %(default)s]")
+    parser_ee.add_argument("exp_dir", help="directory containing all the experiment files to be extracted")
 
     parser_ta.add_argument("-e", "--executors", dest="executors", type=int,
                            help="executors"
@@ -365,6 +386,7 @@ if __name__ == "__main__":
 
     parser_pro.set_defaults(func=pro_runner)
     parser_ta.set_defaults(func=time_analysis)
+    parser_ee.set_defaults(func=extract_essential_files)
 
     args = parser.parse_args()
 
