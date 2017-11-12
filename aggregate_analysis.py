@@ -209,13 +209,17 @@ def generate_plots(res, stages_keys, input_dir):
 
 def extract_essential_files(args):
     input_dir = args.exp_dir
-    analysis_files_dir = '{}_time_analysis'.format(input_dir)
+    analysis_files_dir = os.path.abspath(os.path.join(os.path.dirname(input_dir.strip(os.sep)),
+                                         'ta_only',
+                                         '{}_time_analysis'.format(input_dir.strip(os.sep).split(os.sep)[-1])))
+    print('analysis_files_dir: {}'.format(analysis_files_dir))
     utils.make_sure_path_exists(analysis_files_dir)
     for d in glob.glob(os.path.join(input_dir, 'app-*')):
         dest_dir = os.path.join(analysis_files_dir, d.split(os.sep)[-1])
         utils.make_sure_path_exists(dest_dir)
         for f in ESSENTIAL_FILES:
             for x in glob.glob(os.path.join(d, f)):
+                print('copying {} to {}'.format(x, dest_dir))
                 shutil.copy(x, dest_dir)
 
 
@@ -380,9 +384,6 @@ if __name__ == "__main__":
                                 "[default: %(default)s]")
     parser_ee.add_argument("exp_dir", help="directory containing all the experiment files to be extracted")
 
-    parser_ta.add_argument("-e", "--executors", dest="executors", type=int,
-                           help="executors"
-                                "[default: %(default)s]")
 
     parser_pro.set_defaults(func=pro_runner)
     parser_ta.set_defaults(func=time_analysis)

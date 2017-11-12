@@ -43,14 +43,16 @@ class BenchInstance(object):
         launch.wait_ping_libcloud(self.driver, instance_ids, copy.deepcopy(instance_ids))
 
     def run(self, num_run):
-        cfg = utils.get_cfg()
-        cfg['out_folders'] = {}
-        utils.write_cfg(cfg)
+        with utils.open_cfg(mode='w') as cfg:
+            cfg['out_folders'] = {}
         for i in range(num_run):
             if self.cluster_id == CLUSTER_MAP['spark']:
                 print(bold('Experiment ({}/{})'.format(i + 1, num_run)))
-            self.retrieve_nodes()
-            x_run.run_benchmark(self.nodes)
+            try:
+                self.retrieve_nodes()
+                x_run.run_benchmark(self.nodes)
+            except (OSError, IOError) as exc:
+                print('ERROR: {}\n\nSkipping Experiment ({}/{})'.format(exc, i + 1, num_run))
 
     def terminate(self):
         print("Begin termination of instances and cleaning")
