@@ -143,11 +143,13 @@ def launch_exp(args):
     num_v = args.num_v
     num_run = args.num_runs
     max_executors = args.max_executors
+    num_partitions = args.num_partitions
     for v in num_v:
         with utils.open_cfg(mode='w') as cfg:
             cfg['main'] = {}
             cfg['pagerank'] = {}
             cfg['pagerank']['num_v'] = '(2, ' + v + ')'
+            cfg['pagerank']['num_partitions'] = str(num_partitions)
             if max_executors:
                 cfg['main']['max_executors'] = max_executors
         print(bold('Launch {} Experiments on {} with {} vertices...'.format(num_run, cluster_id, v)))
@@ -217,10 +219,13 @@ def main():
     parser_launch_exp.add_argument('-v', '--num-v', dest='num_v', nargs='+', required=True, help="number of vertices")
     parser_launch_exp.add_argument('-r', '--num-runs', default=1, type=int, dest='num_runs',
                                    help='Number of runs for each configuration')
-    parser_launch_exp.add_argument("-p", "--profile", dest="profile", action="store_true",
+    parser_launch_exp.add_argument('-p', '--num-partitions', required=True, type=int, dest='num_partitions',
+                                   help='Number of partitions for each task')
+
+    parser_launch_exp.add_argument("-P", "--profile", dest="profile", action="store_true",
                                    help="perform log profiling at the end of experiments"
                                         "[default: %(default)s]")
-    parser_launch_exp.add_argument("-t", "--time_analysis", dest="time_analysis", action="store_true",
+    parser_launch_exp.add_argument("-T", "--time_analysis", dest="time_analysis", action="store_true",
                                    help="perform time analysis at the end of experiments"
                                         "[default: %(default)s]")
 
