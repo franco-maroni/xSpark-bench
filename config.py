@@ -1,5 +1,6 @@
 from enum import Enum
 import os
+from credentials import AZ_KEY_NAME, AZ_PUB_KEY_PATH, AZ_PRV_KEY_PATH
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 CLUSTERS_CFG_FILENAME = 'cfg_clusters.ini'
@@ -31,13 +32,15 @@ AZ_VHD_IMAGE = {"StorageAccount": "xsparkstoragefranco",
                 "BlobContainer": "vhd-franco",
                 "Name": "xspark-dvert-n1.vhd"}  # csparkvm13-os.vhd  # vm-os.vhd  # xspark-dvert.vhd  # xspark-dvert-n1.vhd
 """AZURE VHD Image"""
+'''
 # ssh-keygen -t rsa -b 2048
 AZ_KEY_NAME = "az_id_rsa"
 """Name of the RSA 2048 key"""
-AZ_PUB_KEY_PATH = '/Users/francesco/.ssh/' + AZ_KEY_NAME + '.pub'
+AZ_PUB_KEY_PATH = '/home/ubuntu/.ssh/' + AZ_KEY_NAME + '.pub'
 """AZURE Public Key Path (RSA 2048)"""
-AZ_PRV_KEY_PATH = '/Users/francesco/.ssh/' + AZ_KEY_NAME
+AZ_PRV_KEY_PATH = '/home/ubuntu/.ssh/' + AZ_KEY_NAME
 """AZURE Private Key Path (RSA 2048)"""
+'''
 AZ_RESOURCE_GROUP = 'xSpark-franco'
 """AZURE Resource Group"""
 AZ_STORAGE_ACCOUNT = 'xsparkstoragefranco'
@@ -130,7 +133,7 @@ if OFF_HEAP:
 OFF_HEAP_BYTES = 30720000000
 
 # Core Config
-CORE_VM = 2#16
+CORE_VM = 8#16
 CORE_HT_VM = 2#16
 # CORE_HT_VM = 2
 # CORE_VM = 2
@@ -156,8 +159,8 @@ DEADLINE = 37600
 # PageRank
 # 0%  209062
 # 20% 250874
-# 40% 284375
-MAX_EXECUTOR = 10  # 9 TODO:
+# 40% 284375MAX_EXECUTOR = 10  # 9 TODO:
+MAX_EXECUTOR = 8  # 9 TODO:
 OVER_SCALE = 2
 K = 50
 TI = 12000
@@ -226,6 +229,7 @@ BENCH_CONF = {
         "numV": (2, 3000000),  # 7000000
         # "numV": (2, 50000),
         "mu": (4, 3.0),
+        "sigma": (5, 0.0),
         "MAX_ITERATION": (8, 1),
         "NumTrials": 1
     },
