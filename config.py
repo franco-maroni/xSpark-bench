@@ -32,7 +32,7 @@ AZ_VHD_IMAGE = {"StorageAccount": "xsparkstoragefranco",
                 "BlobContainer": "vhd-franco",
                 "Name": "xspark-dvert-n1.vhd"}  # csparkvm13-os.vhd  # vm-os.vhd  # xspark-dvert.vhd  # xspark-dvert-n1.vhd
 """AZURE VHD Image"""
-'''
+''' moved to credentials.py
 # ssh-keygen -t rsa -b 2048
 AZ_KEY_NAME = "az_id_rsa"
 """Name of the RSA 2048 key"""
@@ -106,10 +106,10 @@ TAG = [{
 HDFS_MASTER = "10.0.0.4"  # use private ip for azure!
 """Url of the HDFS NameNode if not set the cluster created is an HDFS Cluster"""
 # Spark config
-SPARK_SEQ_HOME = "/opt/spark-seq/"
-SPARK_2_HOME = "/opt/spark/"
-C_SPARK_HOME = "/usr/local/spark/"
-SPARK_HOME = SPARK_SEQ_HOME  # SPARK_2_HOME  # C_SPARK_HOME
+SPARK_SEQ_HOME = "/opt/spark-seq/"      # "sequential" Spark home directory
+SPARK_2_HOME = "/opt/spark/"            # regular Spark home directory
+C_SPARK_HOME = "/usr/local/spark/"      # "controlled" spark home directory
+SPARK_HOME = SPARK_2_HOME
 """Location of Spark in the ami"""
 
 LOG_LEVEL = "INFO"
@@ -412,5 +412,6 @@ UPDATE_SPARK_PERF = False
 
 CLUSTER_MAP = {
     'hdfs': 'CSPARKHDFS',
-    'spark': 'CSPARKWORK'
+    'spark': 'CSPARKWORK',
+    'generic': 'GENERIC'
 }

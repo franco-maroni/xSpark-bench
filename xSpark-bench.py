@@ -54,7 +54,8 @@ def setup_cluster(cluster, num_instances, assume_yes):
     # TODO: IMPROVE THIS
     run_on_setup = {
         'spark': 0,
-        'hdfs' : 1
+        'hdfs' : 1,
+        'generic': 0
     }
     cluster_id = CLUSTER_MAP[cluster]
     print(bold('Setup {} with {} instances...'.format(cluster_id, num_instances)))
@@ -202,7 +203,7 @@ def main():
                                                          'into the client machine')
     '''
 
-    parser_setup.add_argument('cluster', choices=['hdfs', 'spark', 'all'], help='The specified cluster')
+    parser_setup.add_argument('cluster', choices=['hdfs', 'spark', 'all', 'generic'], help='The specified cluster')
     parser_setup.add_argument('-n', '--num-instances', type=int, default=5, dest='num_instances',
                               help='Number of instances to be created per cluster')
     parser_setup.add_argument('-y', '--yes', dest='assume_yes', action='store_true',
@@ -237,7 +238,7 @@ def main():
                                       help="input directory (where all the log files are located)"
                                            "[default: load from config file latest benchmark directory")
 
-    parser_check_cluster.add_argument('cluster', choices=['hdfs', 'spark', 'all'], help='The specified cluster')
+    parser_check_cluster.add_argument('cluster', choices=['hdfs', 'spark', 'all', 'generic'], help='The specified cluster')
 
     '''
     parser_profile.add_argument('exp_file_path', help='experiment file path')
