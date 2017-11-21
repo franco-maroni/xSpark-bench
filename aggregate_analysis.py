@@ -60,7 +60,7 @@ def compute_t_task(stages_struct, num_records, num_task=None):
            {s['id']: num_task for s in stages_struct.values()}
 
 
-def build_generic_stages_struct(profiled_stages, avg_gq, avg_t_record, avg_io, avg_gq_num_v, avg_t_record_num_v):
+def build_generic_stages_struct(profiled_stages, avg_gq, avg_t_record, avg_io, avg_gq_num_v, avg_t_record_num_v, num_tasks):
     generic_stages_struct = {}
     for k, v in profiled_stages.items():
         generic_stages_struct[k] = {}
@@ -68,7 +68,9 @@ def build_generic_stages_struct(profiled_stages, avg_gq, avg_t_record, avg_io, a
         # generic_stages_struct[k]['name'] = v['name']
         generic_stages_struct[k]['parentsIds'] = v['parent_ids']
         generic_stages_struct[k]['skipped'] = v['skipped']
-        generic_stages_struct[k]['numtask'] = v['num_task']
+        if not num_tasks:
+            num_tasks = v['num_task']
+        generic_stages_struct[k]['numtask'] = num_tasks
         generic_stages_struct[k]['avg_gq'] = avg_gq[k]
         generic_stages_struct[k]['avg_gq_num_v'] = avg_gq_num_v[k]
         generic_stages_struct[k]['avg_t_record'] = avg_t_record[k]
@@ -255,7 +257,8 @@ def extract_essential_files(args):
 def collect_all_time_analysis(args):
     JOB_STATS_BIG_JSON = ['actual_job_duration', 'num_v', 'num_cores']
     STAGES_STATS_BIG_JSON = ['add_to_end_taskset', 'actual_records_read', 's_GQ_ta_master','s_GQ_ta_executor',
-                             't_record_ta_executor', 't_record_ta_master', 'io_factor', 't_task_ta_master']
+                             't_record_ta_executor', 't_record_ta_master', 'io_factor', 't_task_ta_master',
+                             'task_durations']
     input_dir = os.path.abspath(args.exp_dir)
     out_path = os.path.join(input_dir, '{}_allinone_stats.json'.format(input_dir.split(os.sep)[-1]))
     print("Getting time_analysis data from all the experiments in {}".format(input_dir))
@@ -400,7 +403,7 @@ def time_analysis(args):
 
     stages_essential = build_generic_stages_struct(profiled_stages=stages_sample, avg_gq=gq_avg, avg_io=io_factor_avg,
                                                    avg_t_record=t_record_avg, avg_gq_num_v=gq_avg_num_v,
-                                                   avg_t_record_num_v=t_record_avg_num_v)
+                                                   avg_t_record_num_v=t_record_avg_num_v, num_tasks=user_num_tasks)
 
     t_tasks = {}
     t_tasks_num_v = {}
