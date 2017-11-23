@@ -48,7 +48,8 @@ def common_setup(ssh_client):
     :param ssh_client: the ssh client to launch command on the instance
     :return: nothing
     """
-
+    with open_cfg() as cfg:
+        delete_hdfs = cfg.getboolean('main', 'delete_hdfs')
     #  preliminary steps required due to differences between azure and aws
     if PROVIDER == "AZURE":
 
@@ -181,7 +182,7 @@ def common_setup(ssh_client):
         print("   Updating Spark Docker Image...")
         ssh_client.run("docker pull elfolink/spark:2.0")
 
-    if DELETE_HDFS:
+    if delete_hdfs:
         ssh_client.run("sudo umount /mnt")
         ssh_client.run(
                 "sudo mkfs.ext4 -E nodiscard " + TEMPORARY_STORAGE + " && sudo mount -o discard " + TEMPORARY_STORAGE + " /mnt")
@@ -585,12 +586,15 @@ def setup_master(node, slaves_ip, hdfs_master):
         # ssh_client.run("""sed -i '20s/.*//' ./spark-bench/conf/env.sh""")
         ssh_client.run("""sed -i '20s{.*{[ -z "$SPARK_HOME" ] \&\&     export SPARK_HOME="""+SPARK_HOME+"""{' ./spark-bench/conf/env.sh""")
 
-    # START MASTER
+    # START MASTER and HISTORY SERVER
     if current_cluster == 'spark':
         print("   Starting Spark Master")
         ssh_client.run(
             'export SPARK_HOME="{d}" && {d}sbin/start-master.sh -h {0}'.format(
                 master_ip, d=SPARK_HOME))
+        print("   Starting Spark History Server")
+        ssh_client.run(
+            'export SPARK_HOME="{d}" && {d}sbin/start-history-server.sh'.format(d=SPARK_HOME))
 
     return master_ip, node
 
@@ -602,6 +606,8 @@ def setup_hdfs_ssd(node, hdfs_master):
     :param node:
     :return:
     """
+    with open_cfg() as cfg:
+        delete_hdfs = cfg.getboolean('main', 'delete_hdfs')
     ssh_client = sshclient_from_node(node, ssh_key_file=PRIVATE_KEY_PATH, user_name='ubuntu')
 
     out, err, status = ssh_client.run(
@@ -613,7 +619,7 @@ def setup_hdfs_ssd(node, hdfs_master):
     #     ssh_client.run("sudo chown ubuntu:hadoop /mnt/hdfs && sudo chown ubuntu:hadoop /mnt/hdfs/*")
     # elif PROVIDER == "AZURE":
     ssh_client.run("sudo chown ubuntu:ubuntu /mnt/hdfs && sudo chown ubuntu:ubuntu /mnt/hdfs/*")
-    if DELETE_HDFS or hdfs_master == "":
+    if delete_hdfs or hdfs_master == "":
         # ssh_client.run("rm /mnt/hdfs/datanode/current/VERSION")
         ssh_client.run("sudo rm /mnt/hdfs/datanode/current/VERSION")
 
@@ -625,10 +631,11 @@ def rsync_folder(ssh_client, slave):
     :param slave:
     :return:
     """
-
+    with open_cfg() as cfg:
+        delete_hdfs = cfg.getboolean('main', 'delete_hdfs')
     ssh_client.run(
         "eval `ssh-agent -s` && ssh-add " + "$HOME/" + PRIVATE_KEY_NAME + " && rsync -a " + HADOOP_CONF + " ubuntu@" + slave + ":" + HADOOP_CONF)
-    if DELETE_HDFS:
+    if delete_hdfs:
         # ssh_client.run("rm /mnt/hdfs/datanode/current/VERSION")
         ssh_client.run("sudo rm /mnt/hdfs/datanode/current/VERSION")
 
@@ -641,6 +648,8 @@ def setup_hdfs_config(master_node, slaves, hdfs_master):
     :param slaves:
     :return:
     """
+    with open_cfg() as cfg:
+        delete_hdfs = cfg.getboolean('main', 'delete_hdfs')
     ssh_client = sshclient_from_node(master_node, ssh_key_file=PRIVATE_KEY_PATH, user_name='ubuntu')
 
     if hdfs_master == "":
@@ -680,7 +689,7 @@ def setup_hdfs_config(master_node, slaves, hdfs_master):
             executor.submit(rsync_folder, ssh_client, slave)
 
     # Start HDFS
-    if DELETE_HDFS or hdfs_master == "":
+    if delete_hdfs or hdfs_master == "":
         ssh_client.run(
             "eval `ssh-agent -s` && ssh-add " + "$HOME/" + PRIVATE_KEY_NAME + " && /usr/local/lib/hadoop-2.7.2/sbin/stop-dfs.sh")
         # ssh_client.run("rm /mnt/hdfs/datanode/current/VERSION")
@@ -693,7 +702,7 @@ def setup_hdfs_config(master_node, slaves, hdfs_master):
         print(out, err)
     print("   Started HDFS")
 
-    if DELETE_HDFS:
+    if delete_hdfs:
         print("   Cleaned HDFS")
         if len(BENCHMARK_PERF) > 0:
             out, err, status = ssh_client.run(
@@ -734,6 +743,7 @@ def run_benchmark(nodes):
     with open_cfg(mode='w') as cfg:
         current_cluster = cfg['main']['current_cluster']
         hdfs_master = cfg['hdfs']['master_ip'] if 'hdfs' in cfg and 'master_ip' in cfg['hdfs'] else ''
+        delete_hdfs = cfg.getboolean('main', 'delete_hdfs')
         max_executors = int(cfg['main']['max_executors']) if 'main' in cfg and 'max_executors' in cfg['main'] else len(nodes) - 1
         # print('HDFS_MASTER from clusters.ini: ' + hdfs_master)
         end_index = min(len(nodes), max_executors + 1)
@@ -822,7 +832,7 @@ def run_benchmark(nodes):
                             BENCH_CONF[bench][bc][0], bc, BENCH_CONF[bench][bc][1],
                             bench))
 
-            if DELETE_HDFS:
+            if delete_hdfs:
                 print("Generating Data Benchmark " + bench)
                 ssh_client.run(
                     'eval `ssh-agent -s` && ssh-add ' + "$HOME/" + PRIVATE_KEY_NAME + ' && export SPARK_HOME="' + SPARK_HOME + '" && ./spark-bench/' + bench + '/bin/gen_data.sh')

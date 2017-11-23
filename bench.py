@@ -45,12 +45,16 @@ class BenchInstance(object):
     def run(self, num_run):
         with utils.open_cfg(mode='w') as cfg:
             cfg['out_folders'] = {}
+            cfg['main']['delete_hdfs'] = 'true'
         for i in range(num_run):
             if self.cluster_id == CLUSTER_MAP['spark']:
                 print(bold('Experiment ({}/{})'.format(i + 1, num_run)))
             try:
                 self.retrieve_nodes()
                 x_run.run_benchmark(self.nodes)
+                if i == 0:
+                    with utils.open_cfg(mode='w') as cfg:
+                        cfg['main']['delete_hdfs'] = 'false'
             except (OSError, IOError) as exc:
                 print('ERROR: {}\n\nSkipping Experiment ({}/{})'.format(exc, i + 1, num_run))
 
