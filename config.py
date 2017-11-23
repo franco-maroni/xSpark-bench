@@ -109,7 +109,7 @@ HDFS_MASTER = "10.0.0.4"  # use private ip for azure!
 SPARK_SEQ_HOME = "/opt/spark-seq/"      # "sequential" Spark home directory
 SPARK_2_HOME = "/opt/spark/"            # regular Spark home directory
 C_SPARK_HOME = "/usr/local/spark/"      # "controlled" spark home directory
-SPARK_HOME = SPARK_SEQ_HOME
+SPARK_HOME = SPARK_2_HOME
 """Location of Spark in the ami"""
 
 LOG_LEVEL = "INFO"
@@ -133,8 +133,8 @@ if OFF_HEAP:
 OFF_HEAP_BYTES = 30720000000
 
 # Core Config
-CORE_VM = 12#16
-CORE_HT_VM = 12#16
+CORE_VM = 16#16
+CORE_HT_VM = 16#16
 # CORE_HT_VM = 2
 # CORE_VM = 2
 DISABLE_HT = 0
