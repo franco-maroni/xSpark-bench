@@ -99,7 +99,7 @@ def generate_spark_context(args):
     analysis_id = exp_dir.strip('/').split('/')[-1]
     num_records = args.num_records if args.num_records else DEFAULT_NUM_RECORDS
     num_cores = args.num_cores if args.num_cores else DEFAULT_NUM_CORES
-    deadline = args.deadline
+    deadlines = args.deadlines
     num_tasks = args.num_tasks
     generic_stages_path = glob.glob(os.path.join(exp_dir, '{}_generic_stages.json'.format(analysis_id)))
     if not generic_stages_path:
@@ -118,44 +118,46 @@ def generate_spark_context(args):
             v['numtask'] = num_tasks
         seq_duration_num_v += v['t_task_num_v'] * math.ceil(num_tasks / num_cores)
         seq_duration += v['t_task'] * math.ceil(num_tasks / num_cores)
-    if not deadline:
-        deadline = int(seq_duration_num_v)
+    if not deadlines:
+        deadlines = [int(seq_duration_num_v)]
     print('estimated "local" sequential duration: {}ms'.format(int(seq_duration_num_v)))
     print('estimated average sequential duration: {}ms'.format(int(seq_duration)))
 
-    app_name = "{}_c{}_t{}_nr{}_tb{}_{}l_d{}_tc_{}_n_rounds_{}".format(analysis_id,
-                                                                  num_cores,
-                                                                  num_tasks,
-                                                                  num_records,
-                                                                  ta_cfg.TIME_BOUND,
-                                                                  "no_" if ta_cfg.NO_LOOPS else "",
-                                                                  deadline,
-                                                                  "parametric" if ta_cfg.PARAMETRIC_TC else "28_16",
-                                                                  "by1")
-    #        "exp_dir_acceleration_0_1000_c48_t40_no-l_d133000_tc_parametric_forall_nrounds_TEST",
-    SPARK_CONTEXT = {
-        "app_name": app_name,
-        "verification_params":
-            {
-                "plugin": ta_cfg.PLUGIN,
-                "time_bound": ta_cfg.TIME_BOUND,
-                "parametric_tc": ta_cfg.PARAMETRIC_TC,
-                "no_loops": ta_cfg.NO_LOOPS
-            },
-        "tot_cores": num_cores,
-        "analysis_type": "feasibility",
-        "deadline": deadline,
-        "max_time": deadline,
-        "tolerance": ta_cfg.TOLERANCE,
-        "stages": generic_stages_struct
-    }
+    for d in deadlines:
+        print('Generating JSON file for deadline {}'.format(d))
+        app_name = "{}_c{}_t{}_nr{}_tb{}_{}l_d{}_tc_{}_n_rounds_{}".format(analysis_id,
+                                                                      num_cores,
+                                                                      num_tasks,
+                                                                      num_records,
+                                                                      ta_cfg.TIME_BOUND,
+                                                                      "no_" if ta_cfg.NO_LOOPS else "",
+                                                                      d,
+                                                                      "parametric" if ta_cfg.PARAMETRIC_TC else "28_16",
+                                                                      "by1")
+        #        "exp_dir_acceleration_0_1000_c48_t40_no-l_d133000_tc_parametric_forall_nrounds_TEST",
+        SPARK_CONTEXT = {
+            "app_name": app_name,
+            "verification_params":
+                {
+                    "plugin": ta_cfg.PLUGIN,
+                    "time_bound": ta_cfg.TIME_BOUND,
+                    "parametric_tc": ta_cfg.PARAMETRIC_TC,
+                    "no_loops": ta_cfg.NO_LOOPS
+                },
+            "tot_cores": num_cores,
+            "analysis_type": "feasibility",
+            "deadline": d,
+            "max_time": d,
+            "tolerance": ta_cfg.TOLERANCE,
+            "stages": generic_stages_struct
+        }
 
-    out_path_context = os.path.join(exp_dir, '{}_context.json'.format(app_name))
-    print("dumping to {}".format(out_path_context))
-    with open(out_path_context, 'w') as outfile:
-        json.dump(SPARK_CONTEXT, outfile, indent=4, sort_keys=True)
-    if run_verification:
-        ssh_launch_json2mc(out_path_context)
+        out_path_context = os.path.join(exp_dir, '{}_context.json'.format(app_name))
+        print("dumping to {}".format(out_path_context))
+        with open(out_path_context, 'w') as outfile:
+            json.dump(SPARK_CONTEXT, outfile, indent=4, sort_keys=True)
+        if run_verification:
+            ssh_launch_json2mc(out_path_context)
 
 
 def get_scatter(x_axis, res_struct, field1, field2=None):
@@ -601,8 +603,8 @@ if __name__ == "__main__":
     parser_gen.add_argument("-t", "--num-tasks", dest="num_tasks", type=int,
                            help="number of tasks for each stage"
                                 "[default: %(default)s]")
-    parser_gen.add_argument("-d", "--deadline", dest="deadline", type=int,
-                           help="deadline to be considered in json context generation"
+    parser_gen.add_argument("-d", "--deadlines", dest="deadlines", type=int, nargs='+',
+                           help="deadlines to be considered in json context generation"
                                 "[default: %(default)s]")
     parser_gen.add_argument("-v", "--verify", dest="verify", action="store_true",
                             help="launches verification task of the generated file "
