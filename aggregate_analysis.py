@@ -32,7 +32,8 @@ IMGS_FOLDER = 'imgs_local'
 ESSENTIAL_FILES = ['app.json', 'app.dat', 'config.json', '*_time_analysis.json']
 JOB_STATS = ['actual_job_duration', 'total_ta_executor_stages', 'total_ta_master_stages', 'total_overhead_monocore',
              'GQ_master'] + ['total_percentile' + str(p) for p in run_ta.PERCENTILES]
-STAGES_STATS = ['io_factor', 't_record_ta_master', 's_GQ_ta_master', 's_avg_duration_ta_master']
+STAGES_STATS = ['io_factor', 't_record_ta_master', 's_GQ_ta_master', 's_avg_duration_ta_master',
+                's_avg_duration_ta_executor']
 
 JOB_STATS_BIG_JSON = ['actual_job_duration', 'num_v', 'num_cores']
 STAGES_STATS_BIG_JSON = ['add_to_end_taskset', 'actual_records_read', 's_GQ_ta_master', 's_GQ_ta_executor',
@@ -46,8 +47,8 @@ COMBINED_STATS = ['avg_total_with_avg_gq_and_ta_master',
                   'avg_total_with_avg_gq_and_ta_executor',
                   'avg_total_with_avg_gq_and_ta_executor_plus_overhead',
                   'avg_total_with_local_gq_and_ta_master',
-                  'avg_total_with_avg_t_task_master',
-                  'avg_total_with_local_t_task_master']
+                  'avg_total_with_avg_gq_and_avg_t_record_master',
+                  'avg_total_with_avg_gq_and_local_t_record_master']
 
 PLOT_EXEC_TIMES_STATS = SIMPLE_AVERAGE_STATS + COMBINED_STATS
 
@@ -84,7 +85,6 @@ def compute_t_task(stages_struct, num_records, num_task=None):
         # compute t_task with avg_t_record and avg_gq
         stage['t_task'] = stage['avg_t_record'] * reads[stage_id] / (num_task * stage['avg_gq'])
         num_v = str(int(num_records / 20))
-        print("looking for {} in {}".format(num_v, stage['avg_t_record_num_v']))
         if num_v in stage['avg_t_record_num_v']:
             # compute t_task with "local" avg_t_record_num_v and avg_gq
             stage['t_task_num_v'] = stage['avg_t_record_num_v'][num_v] * reads[stage_id] / (
@@ -96,22 +96,6 @@ def compute_t_task(stages_struct, num_records, num_task=None):
            {s['id']: num_task for s in stages_struct.values()}
 
 
-def build_generic_stages_struct(profiled_stages, avg_gq, avg_t_record, avg_io, avg_gq_num_v, avg_t_record_num_v):
-    generic_stages_struct = {}
-    for k, v in profiled_stages.items():
-        generic_stages_struct[k] = {}
-        generic_stages_struct[k]['id'] = v['id']
-        # generic_stages_struct[k]['name'] = v['name']
-        generic_stages_struct[k]['parentsIds'] = v['parent_ids']
-        generic_stages_struct[k]['skipped'] = v['skipped']
-        generic_stages_struct[k]['numtask'] = v['num_task']
-        generic_stages_struct[k]['avg_gq'] = avg_gq[k]
-        generic_stages_struct[k]['avg_gq_num_v'] = avg_gq_num_v[k]
-        generic_stages_struct[k]['avg_t_record'] = avg_t_record[k]
-        generic_stages_struct[k]['avg_t_record_num_v'] = avg_t_record_num_v[k]
-        generic_stages_struct[k]['avg_io_factor'] = avg_io[k]
-    return generic_stages_struct
-
 def build_generic_stages_struct2(profiled_stages, res):  # avg_gq, avg_t_record, avg_io, avg_gq_num_v, avg_t_record_num_v):
     generic_stages_struct = {}
     for k, v in profiled_stages.items():
@@ -122,12 +106,9 @@ def build_generic_stages_struct2(profiled_stages, res):  # avg_gq, avg_t_record,
         generic_stages_struct[k]['skipped'] = v['skipped']
         generic_stages_struct[k]['numtask'] = v['num_task']
         generic_stages_struct[k]['avg_gq'] = np.mean(list(res['avg_s_GQ_ta_master'][k].values()))  #avg_gq[k]
-        print(res['avg_s_GQ_ta_master'][k])
         generic_stages_struct[k]['avg_gq_num_v'] = res['avg_s_GQ_ta_master'][k]  # avg_gq_num_v[k]
-        print(list(res['avg_t_record_ta_master'][k].values()))
         generic_stages_struct[k]['avg_t_record'] = np.mean(list(res['avg_t_record_ta_master'][k].values()))  #avg_t_record[k]
         generic_stages_struct[k]['avg_t_record_num_v'] = res['avg_t_record_ta_master'][k]  # avg_t_record_num_v[k]
-        print(list(res['avg_io_factor'][k].values()))
         generic_stages_struct[k]['avg_io_factor'] = np.mean(list(res['avg_io_factor'][k].values()))  # avg_io[k]
     return generic_stages_struct
 
@@ -147,6 +128,7 @@ def generate_spark_context(args):
     else:
         with open(generic_stages_path[0]) as gsf:
             generic_stages_struct = json.load(gsf)
+            
     compute_t_task(generic_stages_struct, num_records, num_tasks)
 
     seq_duration = seq_duration_num_v = 0
@@ -200,64 +182,11 @@ def generate_spark_context(args):
 
 
 
-def generate_plots(res, stages_keys, input_dir):
-    x_axis = list(res.keys())
-    x_axis.sort()
-
-    trace_list = [get_scatter(x_axis, res, stat) for stat in PLOT_EXEC_TIMES_STATS]
-
-    data_exec_times = go.Data(trace_list)
-
-    trace_list_avg_gq = []
-    trace_list_std_gq = []
-    trace_list_avg_t_record = []
-    trace_list_std_t_record = []
-    for k in stages_keys:
-        trace_list_avg_gq.append(get_scatter(x_axis, res, 'avg_GQ_S' + str(k)))
-        trace_list_avg_gq.append(get_scatter(x_axis, res, 'std_GQ_S' + str(k)))
-        trace_list_avg_t_record.append(get_scatter(x_axis, res, 'avg_t_record_S' + str(k)))
-        trace_list_std_t_record.append(get_scatter(x_axis, res, 'std_t_record_S' + str(k)))
-
-    data_gq_stages = go.Data(trace_list_avg_gq)
-    data_t_record_stages = go.Data(trace_list_avg_t_record)
-
-    plot_figure(data=data_gq_stages,
-                title='average_GQ_' + input_dir.strip('/').split('/')[-1],
-                x_axis_label="Num Vertices",
-                y_axis_label='Value ([0, 1])',
-                out_folder=IMGS_FOLDER)
-
-    plot_figure(data=data_t_record_stages,
-                title='average_record_time_' + input_dir.strip('/').split('/')[-1],
-                x_axis_label="Num Vertices",
-                y_axis_label='Time (ms)',
-                out_folder=IMGS_FOLDER)
-
-    plot_figure(data=data_exec_times,
-                title='pagerank_execution_times_' + input_dir.strip('/').split('/')[-1],
-                x_axis_label="Num Vertices",
-                y_axis_label='Time (ms)',
-                out_folder=IMGS_FOLDER)
-
-
 def generate_plots2(res, stages_keys, input_dir, num_v_set):
     x_axis = list(num_v_set)
     x_axis.sort()
-    #stats = ['avg_actual_job_duration',
-    #         'avg_total_ta_executor_stages',
-    #         'avg_total_ta_master_stages'#,
-            # 'avg_total_with_gq_profiled_and_ta_master',
-            # 'avg_total_with_gq_profiled_and_ta_executor',
-            # 'avg_total_with_gq_profiled_and_ta_executor_plus_overhead',
-            # 'avg_total_with_gq__and_ta_master',
-            # 'avg_total_with_gq_profiled_and_tr_profiled_master',
-            # 'avg_total_with_gq_and_tr_profiled_master'
-     #        ]
 
     trace_list = [get_scatter2(x_axis, res, stat) for stat in PLOT_EXEC_TIMES_STATS]
-
-    #for p in run_ta.PERCENTILES:
-    #    trace_list.append(get_scatter2(x_axis, res, 'avg_total_percentile' + str(p)))
 
     data_exec_times = go.Data(trace_list)
 
@@ -275,19 +204,19 @@ def generate_plots2(res, stages_keys, input_dir, num_v_set):
     data_t_record_stages = go.Data(trace_list_avg_t_record)
 
     plot_figure(data=data_gq_stages,
-                title='average_GQ_{}_2'.format(input_dir.strip('/').split('/')[-1]),
+                title='average_GQ_{}'.format(input_dir.strip('/').split('/')[-1]),
                 x_axis_label="Num Vertices",
                 y_axis_label='Value ([0, 1])',
                 out_folder=IMGS_FOLDER)
 
     plot_figure(data=data_t_record_stages,
-                title='average_record_time_{}_2'.format(input_dir.strip('/').split('/')[-1]),
+                title='average_record_time_{}'.format(input_dir.strip('/').split('/')[-1]),
                 x_axis_label="Num Vertices",
                 y_axis_label='Time (ms)',
                 out_folder=IMGS_FOLDER)
 
     plot_figure(data=data_exec_times,
-                title='pagerank_execution_times_{}_2'.format(input_dir.strip('/').split('/')[-1]),
+                title='pagerank_execution_times_{}'.format(input_dir.strip('/').split('/')[-1]),
                 x_axis_label="Num Vertices",
                 y_axis_label='Time (ms)',
                 out_folder=IMGS_FOLDER)
@@ -347,11 +276,7 @@ def time_analysis(args):
     analysis_id = input_dir.strip('/').split('/')[-1]
 
     num_v_set = set([])
-    gq = gq_avg = gq_avg_num_v = None
-    t_records_s = t_record_avg = None
-    io_factor = io_factor_avg = None
     stages_sample = job_sample = None
-    exp_report = {}  # exp_report[NUM_V][STAGE/JOB]
     exp_report2 = {}  # exp-report2[STAGE/JOB][NUM_V]
     ta_master = ta_master_avg = None
     for x in JOB_STATS:
@@ -382,57 +307,17 @@ def time_analysis(args):
                 exp_report2[x] = get_empty_dict_of_dicts(ta_stages.keys())
             stages_sample = ta_stages
             job_sample = ta_job
-
-            gq = get_empty_dict_of_dicts(ta_stages.keys())
-            gq_avg = get_empty_dict_of_dicts(ta_stages.keys())
-            gq_avg_num_v = get_empty_dict_of_dicts(ta_stages.keys())
-            t_records_s = get_empty_dict_of_dicts(ta_stages.keys())
-            t_record_avg = get_empty_dict_of_dicts(ta_stages.keys())
-            t_record_std = get_empty_dict_of_dicts(ta_stages.keys())
-            t_record_std_div_avg = get_empty_dict_of_dicts(ta_stages.keys())
-            t_record_avg_num_v = get_empty_dict_of_dicts(ta_stages.keys())
-            io_factor = get_empty_dict_of_dicts(ta_stages.keys())
-            io_factor_avg = get_empty_dict_of_dicts(ta_stages.keys())
-            ta_master = get_empty_dict_of_dicts(ta_stages.keys())
-            ta_master_avg = get_empty_dict_of_dicts(ta_stages.keys())
-            ta_executor = get_empty_dict_of_dicts(ta_stages.keys())
-            ta_executor_avg = get_empty_dict_of_dicts(ta_stages.keys())
-
-        if num_v not in exp_report:
-            exp_report[num_v] = collections.defaultdict(list)
         for x in JOB_STATS:
             exp_report2[x][num_v].append(ta_job[x])
-        exp_report[num_v]['actual_job_duration'].append(ta_job['actual_job_duration'])
-        exp_report[num_v]['total_ta_executor_stages'].append(ta_job['total_ta_executor_stages'])
-        exp_report[num_v]['total_ta_master_stages'].append(ta_job['total_ta_master_stages'])
-        for p in run_ta.PERCENTILES:
-            exp_report[num_v]['total_percentile' + str(p)].append(ta_job['total_percentile' + str(p)])
-        exp_report[num_v]['GQ_master'].append(ta_job['GQ_master'])
         # exp_report[num_v]['GQ_executor'].append(ta_job['GQ_executor'])
         for k in ta_stages.keys():
-            exp_report[num_v]['t_record_S' + str(k)].append(ta_stages[k]['t_record_ta_master'])
-            exp_report[num_v]['GQ_S' + str(k)].append(ta_stages[k]['s_GQ_ta_master'])
             for x in STAGES_STATS:
                 exp_report2[x][k][num_v].append(ta_stages[k][x])
-            t_records_s[k][num_v].append(ta_stages[k]['t_record_ta_master'])
-            gq[k][num_v].append(ta_stages[k]['s_GQ_ta_master'])
-            io_factor[k][num_v].append(ta_stages[k]['io_factor'])
-            ta_master[k][num_v].append(ta_stages[k]['s_avg_duration_ta_master'])
-            ta_executor[k][num_v].append(ta_stages[k]['s_avg_duration_ta_executor'])
 
     if collect_all_ta:
         collect_all_time_analysis(input_dir)
     if extract_essentials:
         extract_essential_files(input_dir)
-    res = {}
-    # compute average and standard deviation of all the statistics
-    for k, v in exp_report.items():
-        if k not in JOB_STATS:
-            # (k, v) -> (num_v, stat)
-            res[k] = {}
-            for j in v.keys():
-                res[k]['avg_' + str(j)] = np.mean(v[j])
-                res[k]['std_' + str(j)] = np.std(v[j])
 
     resulting_stats = {}
     # compute average and standard deviation of all the statistics
@@ -457,38 +342,12 @@ def time_analysis(args):
     with open(out_path_res2, 'w+') as outfile:
         json.dump(resulting_stats, outfile, indent=4, sort_keys=True)
 
-
-    for k in ta_stages.keys():
-        # average gq foreach stage across different num_v
-        gq_avg[k] = np.average([np.average(y) for x, y in gq[k].items()])
-        # average t_record foreach stage across different num_v
-        t_record_avg[k] = np.average([np.average(y) for x, y in t_records_s[k].items()])
-        t_record_std[k] = np.std([np.average(y) for x, y in t_records_s[k].items()])
-        t_record_avg_num_v[k] = {x: np.average(y) for x, y in t_records_s[k].items()}
-        t_record_std_div_avg[k] = t_record_std[k] / t_record_avg[k]
-        # average io_factor foreach stage across different num_v
-        io_factor_avg[k] = np.average([np.average(y) for x, y in io_factor[k].items()])
-        # average gq foreach stage and foreach num_v
-        gq_avg_num_v[k] = {x: np.average(y) for x, y in gq[k].items()}
-        # average tage duration foreach stage and foreach num_v
-        ta_master_avg[k] = {x: np.average(y) for x, y in ta_master[k].items()}
-        ta_executor_avg[k] = {x: np.average(y) for x, y in ta_executor[k].items()}
-
     # build generic stages dict including all the average values for stats
-
-    generic_stages_dict_old = build_generic_stages_struct(profiled_stages=stages_sample, avg_gq=gq_avg, avg_io=io_factor_avg,
-                                                      avg_t_record=t_record_avg, avg_gq_num_v=gq_avg_num_v,
-                                                      avg_t_record_num_v=t_record_avg_num_v)
     generic_stages_dict = build_generic_stages_struct2(profiled_stages=stages_sample, res=resulting_stats)
     out_path_generic_s = os.path.join(input_dir, '{}_generic_stages.json'.format(analysis_id))
     print("dumping generic_stages to {}".format(out_path_generic_s))
     with open(out_path_generic_s, 'w+') as outfile:
         json.dump(generic_stages_dict, outfile, indent=4, sort_keys=True)
-    out_path_generic_s_old = os.path.join(input_dir, '{}_generic_stages_old.json'.format(analysis_id))
-    print("dumping generic_stages to {}".format(out_path_generic_s_old))
-    with open(out_path_generic_s_old, 'w+') as outfile:
-        json.dump(generic_stages_dict_old, outfile, indent=4, sort_keys=True)
-
     #  build estimates with different combinations
     t_tasks = {}
     t_tasks_num_v = {}
@@ -498,59 +357,30 @@ def time_analysis(args):
         resulting_stats[x] = {}
         for v in num_v_set:
             resulting_stats[x][v] = 0
+    num_cores = job_sample['num_cores']
     for v in num_v_set:
-        res[v]['avg_total_with_avg_gq_and_ta_master'] = 0
-        res[v]['avg_total_with_avg_gq_and_ta_executor'] = 0
-        res[v]['avg_total_with_avg_gq_and_ta_executor_plus_overhead'] = \
-            resulting_stats['avg_total_overhead_monocore'][v]/job_sample['num_cores']
-        res[v]['avg_total_with_local_gq_and_ta_master'] = 0
-        res[v]['avg_total_with_avg_t_task_master'] = 0
-        res[v]['avg_total_with_local_t_task_master'] = 0
         t_tasks[v], t_tasks_num_v[v], num_tasks[v] = compute_t_task(generic_stages_dict, int(v) * 20)
         for s in ta_stages.keys():
-            res[v]['avg_total_with_avg_gq_and_ta_master'] += ta_master_avg[s][v] / gq_avg[s]
-            res[v]['avg_total_with_avg_gq_and_ta_executor'] += ta_executor_avg[s][v] / gq_avg[s]
-            res[v]['avg_total_with_local_gq_and_ta_master'] += ta_master_avg[s][v] / gq_avg_num_v[s][v]
-            res[v]['avg_total_with_avg_t_task_master'] += t_tasks[v][s] * math.ceil(
-                num_tasks[v][s] / job_sample['num_cores'])
-            res[v]['avg_total_with_local_t_task_master'] += t_tasks_num_v[v][s] * math.ceil(
-                num_tasks[v][s] / job_sample['num_cores'])
-        res[v]['avg_total_with_avg_gq_and_ta_executor_plus_overhead'] = \
-            res[v]['avg_total_with_avg_gq_and_ta_executor'] + \
-            resulting_stats['avg_total_overhead_monocore'][v] / job_sample['num_cores']
-        '''
-        VERSIONE 2.0
-        '''
-        #t_tasks[v], t_tasks_num_v[v], num_tasks[v] = compute_t_task(generic_stages_dict, int(v) * 20)
-        for s in ta_stages.keys():
-            resulting_stats['avg_total_with_avg_gq_and_ta_master'][v] += ta_master_avg[s][v] / gq_avg[s]
-            resulting_stats['avg_total_with_avg_gq_and_ta_executor'][v] += ta_executor_avg[s][v] / gq_avg[s]
-            resulting_stats['avg_total_with_local_gq_and_ta_master'][v] += ta_master_avg[s][v] / gq_avg_num_v[s][v]
-            resulting_stats['avg_total_with_avg_t_task_master'][v] += t_tasks[v][s] * math.ceil(
-                num_tasks[v][s] / job_sample['num_cores'])
-            resulting_stats['avg_total_with_local_t_task_master'][v] += t_tasks_num_v[v][s] * math.ceil(
-                num_tasks[v][s] / job_sample['num_cores'])
+            ta_master = resulting_stats['avg_s_avg_duration_ta_master'][s][v]
+            avg_gq = generic_stages_dict[s]['avg_gq']
+            ta_executor = resulting_stats['avg_s_avg_duration_ta_executor'][s][v]
+
+            resulting_stats['avg_total_with_avg_gq_and_ta_master'][v] += ta_master / avg_gq
+            resulting_stats['avg_total_with_avg_gq_and_ta_executor'][v] += ta_executor / avg_gq
+            resulting_stats['avg_total_with_local_gq_and_ta_master'][v] += ta_master / avg_gq
+            resulting_stats['avg_total_with_avg_gq_and_avg_t_record_master'][v] += t_tasks[v][s] * math.ceil(
+                num_tasks[v][s] / num_cores)
+            resulting_stats['avg_total_with_avg_gq_and_local_t_record_master'][v] += t_tasks_num_v[v][s] * math.ceil(
+                num_tasks[v][s] / num_cores)
         resulting_stats['avg_total_with_avg_gq_and_ta_executor_plus_overhead'][v] = \
             resulting_stats['avg_total_with_avg_gq_and_ta_executor'][v] + \
-            resulting_stats['avg_total_overhead_monocore'][v] / job_sample['num_cores']
+            resulting_stats['avg_total_overhead_monocore'][v] / num_cores
 
 
     pp = pprint.PrettyPrinter(indent=4)
-    '''
-    print("\navg_gq: {}".format(gq_avg))
-    print("\ngq_avg_num_v: {}".format(gq_avg_num_v))
-    print("\navg_t_record: {}".format(t_record_avg))
-    print("\navg_io_factor: {}".format(io_factor_avg))
-    print("\nt_record_avg_num_v:")
-    pp.pprint(t_record_avg_num_v)
-    print("\nt_record_std: {}")
-    pp.pprint(t_record_std)
-    print("\nt_record_std_div_avg: {}")
-    pp.pprint(t_record_std_div_avg)
-    '''
     # pp.pprint(exp_report2)
     if plot:
-        generate_plots(res, ta_stages.keys(), input_dir)
+        # generate_plots(res, ta_stages.keys(), input_dir)
         generate_plots2(resulting_stats, ta_stages.keys(), input_dir, num_v_set)
 
 
