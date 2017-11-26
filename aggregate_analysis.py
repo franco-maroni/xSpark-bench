@@ -8,7 +8,6 @@ import plotly.plotly as py
 import plotly.graph_objs as go
 from functools import reduce
 import numpy as np
-import plotly.offline as offline
 import argparse
 import spark_time_analysis.cfg as ta_cfg
 import json
@@ -20,7 +19,8 @@ import math
 import config
 from util.ssh_client import CustomSSHClient
 from plumbum.machines.paramiko_machine import ParamikoMachine
-from plumbum import BG, FG
+from plumbum import BG
+from util.plot_analyses import get_scatter, get_layout, plot_figure
 
 D_VERT_SERVER_HOSTNAME = '40.84.157.107'
 BASE_JSON2MC_PATH = '/home/ubuntu/DICE-Verification/d-vert-server/d-vert-json2mc/'
@@ -34,6 +34,20 @@ JOB_STATS = ['actual_job_duration', 'total_ta_executor_stages', 'total_ta_master
              'GQ_master'] + ['total_percentile' + str(p) for p in run_ta.PERCENTILES]
 STAGES_STATS = ['io_factor', 't_record_ta_master', 's_GQ_ta_master', 's_avg_duration_ta_master']
 
+JOB_STATS_BIG_JSON = ['actual_job_duration', 'num_v', 'num_cores']
+STAGES_STATS_BIG_JSON = ['add_to_end_taskset', 'actual_records_read', 's_GQ_ta_master', 's_GQ_ta_executor',
+                         't_record_ta_executor', 't_record_ta_master', 'io_factor', 't_task_ta_master',
+                         'task_durations']
+
+PLOT_EXEC_TIMES_STATS = ['avg_actual_job_duration',
+              'avg_total_ta_executor_stages',
+              'avg_total_ta_master_stages',
+              'avg_total_with_avg_gq_and_ta_master',
+              'avg_total_with_avg_gq_and_ta_executor',
+              'avg_total_with_avg_gq_and_ta_executor_plus_overhead',
+              'avg_total_with_local_gq_and_ta_master',
+              'avg_total_with_avg_t_task_master',
+              'avg_total_with_local_t_task_master'] + ['avg_total_percentile' + str(p) for p in run_ta.PERCENTILES]
 
 def compute_t_task(stages_struct, num_records, num_task=None):
     """
@@ -41,6 +55,7 @@ def compute_t_task(stages_struct, num_records, num_task=None):
     :param stages_struct: data structure containing the
     :param num_records: total number of input records
     :param num_task: number of tasks for each stages (currently uniform)
+    :returns t_tasks dictionary, t_tasks_num_v dictionary, num_tasks dictionary
     """
     reads = {}
     writes = {}
@@ -63,10 +78,12 @@ def compute_t_task(stages_struct, num_records, num_task=None):
         if not num_task:
             num_task = stage['numtask']
         stage['records_read'] = reads[stage_id]
+        # compute t_task with avg_t_record and avg_gq
         stage['t_task'] = stage['avg_t_record'] * reads[stage_id] / (num_task * stage['avg_gq'])
         num_v = str(int(num_records / 20))
         print("looking for {} in {}".format(num_v, stage['avg_t_record_num_v']))
         if num_v in stage['avg_t_record_num_v']:
+            # compute t_task with "local" avg_t_record_num_v and avg_gq
             stage['t_task_num_v'] = stage['avg_t_record_num_v'][num_v] * reads[stage_id] / (
                 num_task * stage['avg_gq'])
         else:
@@ -160,72 +177,12 @@ def generate_spark_context(args):
             ssh_launch_json2mc(out_path_context)
 
 
-def get_scatter(x_axis, res_struct, field1, field2=None):
-    # print('get scatter for {}'.format(field1))
-    return go.Scatter(
-        x=x_axis,
-        y=[res_struct[z][field1] + res_struct[z][field2] for z in x_axis] if field2
-        else [res_struct[z][field1] for z in x_axis],
-        name=field1 + '_+_' + field2 if field2 else field1
-    )
-
-
-def get_layout(title, x_title, y_title):
-    return go.Layout(
-        title=title,
-        xaxis=dict(
-            title=x_title,
-            titlefont=dict(
-                family='Courier New, monospace',
-                size=18,
-                color='#7f7f7f'
-            )
-        ),
-        yaxis=dict(
-            title=y_title,
-            titlefont=dict(
-                family='Courier New, monospace',
-                size=18,
-                color='#7f7f7f'
-            ),
-            exponentformat='none'
-        )
-    )
-
-
-def plot_figure(data, title, x_axis_label, y_axis_label):
-    layout = get_layout(title,
-                        x_axis_label,
-                        y_axis_label)
-    fig = go.Figure(data=data, layout=layout)
-    # url = py.plot(fig, filename=title, auto_open=False)
-    # fig = py.get_figure(url)
-    local_path = os.path.abspath(os.path.join(IMGS_FOLDER, '{}.html'.format(fig['layout']['title'])))
-    # print("{} -> local: {}".format(url, local_path))
-    print("Saving plot in: {}".format(local_path))
-    # py.image.save_as(fig, local_path)
-    offline.plot(figure_or_data=fig, filename=local_path,
-                 # image='png',
-                 image_filename=title, auto_open=False)
-
 
 def generate_plots(res, stages_keys, input_dir):
     x_axis = list(res.keys())
     x_axis.sort()
-    stats = ['avg_actual_job_duration',
-             'avg_total_ta_executor_stages',
-             'avg_total_ta_master_stages',
-             'avg_total_with_gq_profiled_and_ta_master',
-             'avg_total_with_gq_profiled_and_ta_executor',
-             'avg_total_with_gq_profiled_and_ta_executor_plus_overhead',
-             'avg_total_with_gq__and_ta_master',
-             'avg_total_with_gq_profiled_and_tr_profiled_master',
-             'avg_total_with_gq_and_tr_profiled_master']
 
-    trace_list = [get_scatter(x_axis, res, stat) for stat in stats]
-
-    for p in run_ta.PERCENTILES:
-        trace_list.append(get_scatter(x_axis, res, 'avg_total_percentile' + str(p)))
+    trace_list = [get_scatter(x_axis, res, stat) for stat in PLOT_EXEC_TIMES_STATS]
 
     data_exec_times = go.Data(trace_list)
 
@@ -245,17 +202,20 @@ def generate_plots(res, stages_keys, input_dir):
     plot_figure(data=data_gq_stages,
                 title='average_GQ_' + input_dir.strip('/').split('/')[-1],
                 x_axis_label="Num Vertices",
-                y_axis_label='Value ([0, 1])')
+                y_axis_label='Value ([0, 1])',
+                out_folder=IMGS_FOLDER)
 
     plot_figure(data=data_t_record_stages,
                 title='average_record_time_' + input_dir.strip('/').split('/')[-1],
                 x_axis_label="Num Vertices",
-                y_axis_label='Time (ms)')
+                y_axis_label='Time (ms)',
+                out_folder=IMGS_FOLDER)
 
     plot_figure(data=data_exec_times,
                 title='pagerank_execution_times_' + input_dir.strip('/').split('/')[-1],
                 x_axis_label="Num Vertices",
-                y_axis_label='Time (ms)')
+                y_axis_label='Time (ms)',
+                out_folder=IMGS_FOLDER)
 
 
 def extract_essential_files(input_dir):
@@ -275,10 +235,6 @@ def extract_essential_files(input_dir):
 
 
 def collect_all_time_analysis(exp_dir):
-    JOB_STATS_BIG_JSON = ['actual_job_duration', 'num_v', 'num_cores']
-    STAGES_STATS_BIG_JSON = ['add_to_end_taskset', 'actual_records_read', 's_GQ_ta_master', 's_GQ_ta_executor',
-                             't_record_ta_executor', 't_record_ta_master', 'io_factor', 't_task_ta_master',
-                             'task_durations']
     input_dir = os.path.abspath(exp_dir)
     out_path = os.path.join(input_dir, '{}_allinone_stats.json'.format(input_dir.split(os.sep)[-1]))
     print("Getting time_analysis data from all the experiments in {}".format(input_dir))
@@ -313,7 +269,7 @@ def time_analysis(args):
     reprocess = args.reprocess
     collect_all_ta = args.collect_all_ta
     extract_essentials = args.extract_essentials
-    executors = args.executors
+    # executors = args.executors
     analysis_id = input_dir.strip('/').split('/')[-1]
 
     num_v_set = set([])
@@ -322,14 +278,16 @@ def time_analysis(args):
     io_factor = io_factor_avg = None
     stages_sample = job_sample = None
     exp_report = {}  # exp_report[NUM_V][STAGE/JOB]
-    exp_report2 = {}  # ex-Preport2[STAGE/JOB][NUM_V]
+    exp_report2 = {}  # exp-report2[STAGE/JOB][NUM_V]
     ta_master = ta_master_avg = None
-    # iterate over all the application directories included in input_dir
     for x in JOB_STATS:
         exp_report2[x] = collections.defaultdict(list)
+    # iterate over all the application directories included in input_dir
     for d in glob.glob(os.path.join(input_dir, 'app-*')):
-        if executors:  # if specified, modify max_executor in config.json
+        '''
+        if executors:  # if specified, modify max_executor in config.json  --> to be removed
             run_ta.modify_executors(d, executors)
+        '''
         if reprocess:  # run time_analysis on d
             ta_job, ta_stages = run_ta.main(d)
         else:  # get precomputed analysis file from d
@@ -350,6 +308,7 @@ def time_analysis(args):
                 exp_report2[x] = get_empty_dict_of_dicts(ta_stages.keys())
             stages_sample = ta_stages
             job_sample = ta_job
+
             gq = get_empty_dict_of_dicts(ta_stages.keys())
             gq_avg = get_empty_dict_of_dicts(ta_stages.keys())
             gq_avg_num_v = get_empty_dict_of_dicts(ta_stages.keys())
@@ -441,37 +400,39 @@ def time_analysis(args):
         ta_master_avg[k] = {x: np.average(y) for x, y in ta_master[k].items()}
         ta_executor_avg[k] = {x: np.average(y) for x, y in ta_executor[k].items()}
 
+    # build generic stages dict including all the average values for stats
     generic_stages_dict = build_generic_stages_struct(profiled_stages=stages_sample, avg_gq=gq_avg, avg_io=io_factor_avg,
-                                                   avg_t_record=t_record_avg, avg_gq_num_v=gq_avg_num_v,
-                                                   avg_t_record_num_v=t_record_avg_num_v)
+                                                      avg_t_record=t_record_avg, avg_gq_num_v=gq_avg_num_v,
+                                                      avg_t_record_num_v=t_record_avg_num_v)
     out_path_generic_s = os.path.join(input_dir, '{}_generic_stages.json'.format(analysis_id))
     print("dumping generic_stages to {}".format(out_path_generic_s))
     with open(out_path_generic_s, 'w+') as outfile:
         json.dump(generic_stages_dict, outfile, indent=4, sort_keys=True)
 
+    #  build estimates with different combinations
     t_tasks = {}
     t_tasks_num_v = {}
     num_tasks = {}
     print("num_v_set: {}\nnum_cores: {}".format(num_v_set, job_sample['num_cores']))
     for v in num_v_set:
-        res[v]['avg_total_with_gq_profiled_and_ta_master'] = 0
-        res[v]['avg_total_with_gq_profiled_and_ta_executor'] = 0
-        res[v]['avg_total_with_gq_profiled_and_ta_executor_plus_overhead'] = \
+        res[v]['avg_total_with_avg_gq_and_ta_master'] = 0
+        res[v]['avg_total_with_avg_gq_and_ta_executor'] = 0
+        res[v]['avg_total_with_avg_gq_and_ta_executor_plus_overhead'] = \
             resulting_stats['avg_total_overhead_monocore'][v]/job_sample['num_cores']
-        res[v]['avg_total_with_gq__and_ta_master'] = 0
-        res[v]['avg_total_with_gq_profiled_and_tr_profiled_master'] = 0
-        res[v]['avg_total_with_gq_and_tr_profiled_master'] = 0
+        res[v]['avg_total_with_local_gq_and_ta_master'] = 0
+        res[v]['avg_total_with_avg_t_task_master'] = 0
+        res[v]['avg_total_with_local_t_task_master'] = 0
         t_tasks[v], t_tasks_num_v[v], num_tasks[v] = compute_t_task(generic_stages_dict, int(v) * 20)
         for s in ta_stages.keys():
-            res[v]['avg_total_with_gq_profiled_and_ta_master'] += ta_master_avg[s][v] / gq_avg[s]
-            res[v]['avg_total_with_gq_profiled_and_ta_executor'] += ta_executor_avg[s][v] / gq_avg[s]
-            res[v]['avg_total_with_gq__and_ta_master'] += ta_master_avg[s][v] / gq_avg_num_v[s][v]
-            res[v]['avg_total_with_gq_profiled_and_tr_profiled_master'] += t_tasks[v][s] * math.ceil(
+            res[v]['avg_total_with_avg_gq_and_ta_master'] += ta_master_avg[s][v] / gq_avg[s]
+            res[v]['avg_total_with_avg_gq_and_ta_executor'] += ta_executor_avg[s][v] / gq_avg[s]
+            res[v]['avg_total_with_local_gq_and_ta_master'] += ta_master_avg[s][v] / gq_avg_num_v[s][v]
+            res[v]['avg_total_with_avg_t_task_master'] += t_tasks[v][s] * math.ceil(
                 num_tasks[v][s] / job_sample['num_cores'])
-            res[v]['avg_total_with_gq_and_tr_profiled_master'] += t_tasks_num_v[v][s] * math.ceil(
+            res[v]['avg_total_with_local_t_task_master'] += t_tasks_num_v[v][s] * math.ceil(
                 num_tasks[v][s] / job_sample['num_cores'])
-        res[v]['avg_total_with_gq_profiled_and_ta_executor_plus_overhead'] = \
-            res[v]['avg_total_with_gq_profiled_and_ta_executor'] + \
+        res[v]['avg_total_with_avg_gq_and_ta_executor_plus_overhead'] = \
+            res[v]['avg_total_with_avg_gq_and_ta_executor'] + \
             resulting_stats['avg_total_overhead_monocore'][v] / job_sample['num_cores']
 
     pp = pprint.PrettyPrinter(indent=4)
@@ -585,9 +546,11 @@ if __name__ == "__main__":
     parser_ta.add_argument("-c", "--collect", dest="collect_all_ta", action="store_true",
                            help="collect some of the main important statistics in one json file "
                                 "[default: %(default)s]")
+    '''
     parser_ta.add_argument("--executors", dest="executors", type=int,
                            help="executors"
                                 "[default: %(default)s]")
+    '''
     parser_ta.add_argument("-e", "--extract-essentials", dest="extract_essentials", action="store_true",
                            help='extract essential files to carry on further analysis '
                                 '({})'.format(ESSENTIAL_FILES))
