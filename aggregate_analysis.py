@@ -20,7 +20,7 @@ import config
 from util.ssh_client import CustomSSHClient
 from plumbum.machines.paramiko_machine import ParamikoMachine
 from plumbum import BG
-from util.plot_analyses import get_scatter, get_layout, plot_figure
+from util.plot_analyses import get_scatter, get_scatter2, get_layout, plot_figure
 
 D_VERT_SERVER_HOSTNAME = '40.84.157.107'
 BASE_JSON2MC_PATH = '/home/ubuntu/DICE-Verification/d-vert-server/d-vert-json2mc/'
@@ -39,15 +39,18 @@ STAGES_STATS_BIG_JSON = ['add_to_end_taskset', 'actual_records_read', 's_GQ_ta_m
                          't_record_ta_executor', 't_record_ta_master', 'io_factor', 't_task_ta_master',
                          'task_durations']
 
-PLOT_EXEC_TIMES_STATS = ['avg_actual_job_duration',
-              'avg_total_ta_executor_stages',
-              'avg_total_ta_master_stages',
-              'avg_total_with_avg_gq_and_ta_master',
-              'avg_total_with_avg_gq_and_ta_executor',
-              'avg_total_with_avg_gq_and_ta_executor_plus_overhead',
-              'avg_total_with_local_gq_and_ta_master',
-              'avg_total_with_avg_t_task_master',
-              'avg_total_with_local_t_task_master'] + ['avg_total_percentile' + str(p) for p in run_ta.PERCENTILES]
+SIMPLE_AVERAGE_STATS = ['avg_actual_job_duration',
+                        'avg_total_ta_executor_stages',
+                        'avg_total_ta_master_stages'] + ['avg_total_percentile' + str(p) for p in run_ta.PERCENTILES]
+COMBINED_STATS = ['avg_total_with_avg_gq_and_ta_master',
+                  'avg_total_with_avg_gq_and_ta_executor',
+                  'avg_total_with_avg_gq_and_ta_executor_plus_overhead',
+                  'avg_total_with_local_gq_and_ta_master',
+                  'avg_total_with_avg_t_task_master',
+                  'avg_total_with_local_t_task_master']
+
+PLOT_EXEC_TIMES_STATS = SIMPLE_AVERAGE_STATS + COMBINED_STATS
+
 
 def compute_t_task(stages_struct, num_records, num_task=None):
     """
@@ -107,6 +110,25 @@ def build_generic_stages_struct(profiled_stages, avg_gq, avg_t_record, avg_io, a
         generic_stages_struct[k]['avg_t_record'] = avg_t_record[k]
         generic_stages_struct[k]['avg_t_record_num_v'] = avg_t_record_num_v[k]
         generic_stages_struct[k]['avg_io_factor'] = avg_io[k]
+    return generic_stages_struct
+
+def build_generic_stages_struct2(profiled_stages, res):  # avg_gq, avg_t_record, avg_io, avg_gq_num_v, avg_t_record_num_v):
+    generic_stages_struct = {}
+    for k, v in profiled_stages.items():
+        generic_stages_struct[k] = {}
+        generic_stages_struct[k]['id'] = v['id']
+        # generic_stages_struct[k]['name'] = v['name']
+        generic_stages_struct[k]['parentsIds'] = v['parent_ids']
+        generic_stages_struct[k]['skipped'] = v['skipped']
+        generic_stages_struct[k]['numtask'] = v['num_task']
+        generic_stages_struct[k]['avg_gq'] = np.mean(list(res['avg_s_GQ_ta_master'][k].values()))  #avg_gq[k]
+        print(res['avg_s_GQ_ta_master'][k])
+        generic_stages_struct[k]['avg_gq_num_v'] = res['avg_s_GQ_ta_master'][k]  # avg_gq_num_v[k]
+        print(list(res['avg_t_record_ta_master'][k].values()))
+        generic_stages_struct[k]['avg_t_record'] = np.mean(list(res['avg_t_record_ta_master'][k].values()))  #avg_t_record[k]
+        generic_stages_struct[k]['avg_t_record_num_v'] = res['avg_t_record_ta_master'][k]  # avg_t_record_num_v[k]
+        print(list(res['avg_io_factor'][k].values()))
+        generic_stages_struct[k]['avg_io_factor'] = np.mean(list(res['avg_io_factor'][k].values()))  # avg_io[k]
     return generic_stages_struct
 
 
@@ -217,6 +239,58 @@ def generate_plots(res, stages_keys, input_dir):
                 y_axis_label='Time (ms)',
                 out_folder=IMGS_FOLDER)
 
+
+def generate_plots2(res, stages_keys, input_dir, num_v_set):
+    x_axis = list(num_v_set)
+    x_axis.sort()
+    #stats = ['avg_actual_job_duration',
+    #         'avg_total_ta_executor_stages',
+    #         'avg_total_ta_master_stages'#,
+            # 'avg_total_with_gq_profiled_and_ta_master',
+            # 'avg_total_with_gq_profiled_and_ta_executor',
+            # 'avg_total_with_gq_profiled_and_ta_executor_plus_overhead',
+            # 'avg_total_with_gq__and_ta_master',
+            # 'avg_total_with_gq_profiled_and_tr_profiled_master',
+            # 'avg_total_with_gq_and_tr_profiled_master'
+     #        ]
+
+    trace_list = [get_scatter2(x_axis, res, stat) for stat in PLOT_EXEC_TIMES_STATS]
+
+    #for p in run_ta.PERCENTILES:
+    #    trace_list.append(get_scatter2(x_axis, res, 'avg_total_percentile' + str(p)))
+
+    data_exec_times = go.Data(trace_list)
+
+    trace_list_avg_gq = []
+    trace_list_std_gq = []
+    trace_list_avg_t_record = []
+    trace_list_std_t_record = []
+    for k in stages_keys:
+        trace_list_avg_gq.append(get_scatter2(x_axis, res['avg_s_GQ_ta_master'], str(k)))
+        trace_list_avg_gq.append(get_scatter2(x_axis, res['std_s_GQ_ta_master'], str(k)))
+        trace_list_avg_t_record.append(get_scatter2(x_axis, res['avg_t_record_ta_master'], str(k)))
+        trace_list_avg_t_record.append(get_scatter2(x_axis, res['std_t_record_ta_master'], str(k)))
+
+    data_gq_stages = go.Data(trace_list_avg_gq)
+    data_t_record_stages = go.Data(trace_list_avg_t_record)
+
+    plot_figure(data=data_gq_stages,
+                title='average_GQ_{}_2'.format(input_dir.strip('/').split('/')[-1]),
+                x_axis_label="Num Vertices",
+                y_axis_label='Value ([0, 1])',
+                out_folder=IMGS_FOLDER)
+
+    plot_figure(data=data_t_record_stages,
+                title='average_record_time_{}_2'.format(input_dir.strip('/').split('/')[-1]),
+                x_axis_label="Num Vertices",
+                y_axis_label='Time (ms)',
+                out_folder=IMGS_FOLDER)
+
+    plot_figure(data=data_exec_times,
+                title='pagerank_execution_times_{}_2'.format(input_dir.strip('/').split('/')[-1]),
+                x_axis_label="Num Vertices",
+                y_axis_label='Time (ms)',
+                out_folder=IMGS_FOLDER)
 
 def extract_essential_files(input_dir):
     analysis_files_dir = os.path.abspath(os.path.join(os.path.dirname(input_dir.strip(os.sep)),
@@ -336,11 +410,11 @@ def time_analysis(args):
         exp_report[num_v]['GQ_master'].append(ta_job['GQ_master'])
         # exp_report[num_v]['GQ_executor'].append(ta_job['GQ_executor'])
         for k in ta_stages.keys():
-            exp_report[num_v]['t_record_S' + str(k)].append(ta_stages[k]['t_record_ta_executor'])
+            exp_report[num_v]['t_record_S' + str(k)].append(ta_stages[k]['t_record_ta_master'])
             exp_report[num_v]['GQ_S' + str(k)].append(ta_stages[k]['s_GQ_ta_master'])
             for x in STAGES_STATS:
                 exp_report2[x][k][num_v].append(ta_stages[k][x])
-            t_records_s[k][num_v].append(ta_stages[k]['t_record_ta_executor'])
+            t_records_s[k][num_v].append(ta_stages[k]['t_record_ta_master'])
             gq[k][num_v].append(ta_stages[k]['s_GQ_ta_master'])
             io_factor[k][num_v].append(ta_stages[k]['io_factor'])
             ta_master[k][num_v].append(ta_stages[k]['s_avg_duration_ta_master'])
@@ -401,19 +475,29 @@ def time_analysis(args):
         ta_executor_avg[k] = {x: np.average(y) for x, y in ta_executor[k].items()}
 
     # build generic stages dict including all the average values for stats
-    generic_stages_dict = build_generic_stages_struct(profiled_stages=stages_sample, avg_gq=gq_avg, avg_io=io_factor_avg,
+
+    generic_stages_dict_old = build_generic_stages_struct(profiled_stages=stages_sample, avg_gq=gq_avg, avg_io=io_factor_avg,
                                                       avg_t_record=t_record_avg, avg_gq_num_v=gq_avg_num_v,
                                                       avg_t_record_num_v=t_record_avg_num_v)
+    generic_stages_dict = build_generic_stages_struct2(profiled_stages=stages_sample, res=resulting_stats)
     out_path_generic_s = os.path.join(input_dir, '{}_generic_stages.json'.format(analysis_id))
     print("dumping generic_stages to {}".format(out_path_generic_s))
     with open(out_path_generic_s, 'w+') as outfile:
         json.dump(generic_stages_dict, outfile, indent=4, sort_keys=True)
+    out_path_generic_s_old = os.path.join(input_dir, '{}_generic_stages_old.json'.format(analysis_id))
+    print("dumping generic_stages to {}".format(out_path_generic_s_old))
+    with open(out_path_generic_s_old, 'w+') as outfile:
+        json.dump(generic_stages_dict_old, outfile, indent=4, sort_keys=True)
 
     #  build estimates with different combinations
     t_tasks = {}
     t_tasks_num_v = {}
     num_tasks = {}
     print("num_v_set: {}\nnum_cores: {}".format(num_v_set, job_sample['num_cores']))
+    for x in COMBINED_STATS:
+        resulting_stats[x] = {}
+        for v in num_v_set:
+            resulting_stats[x][v] = 0
     for v in num_v_set:
         res[v]['avg_total_with_avg_gq_and_ta_master'] = 0
         res[v]['avg_total_with_avg_gq_and_ta_executor'] = 0
@@ -434,9 +518,25 @@ def time_analysis(args):
         res[v]['avg_total_with_avg_gq_and_ta_executor_plus_overhead'] = \
             res[v]['avg_total_with_avg_gq_and_ta_executor'] + \
             resulting_stats['avg_total_overhead_monocore'][v] / job_sample['num_cores']
+        '''
+        VERSIONE 2.0
+        '''
+        #t_tasks[v], t_tasks_num_v[v], num_tasks[v] = compute_t_task(generic_stages_dict, int(v) * 20)
+        for s in ta_stages.keys():
+            resulting_stats['avg_total_with_avg_gq_and_ta_master'][v] += ta_master_avg[s][v] / gq_avg[s]
+            resulting_stats['avg_total_with_avg_gq_and_ta_executor'][v] += ta_executor_avg[s][v] / gq_avg[s]
+            resulting_stats['avg_total_with_local_gq_and_ta_master'][v] += ta_master_avg[s][v] / gq_avg_num_v[s][v]
+            resulting_stats['avg_total_with_avg_t_task_master'][v] += t_tasks[v][s] * math.ceil(
+                num_tasks[v][s] / job_sample['num_cores'])
+            resulting_stats['avg_total_with_local_t_task_master'][v] += t_tasks_num_v[v][s] * math.ceil(
+                num_tasks[v][s] / job_sample['num_cores'])
+        resulting_stats['avg_total_with_avg_gq_and_ta_executor_plus_overhead'][v] = \
+            resulting_stats['avg_total_with_avg_gq_and_ta_executor'][v] + \
+            resulting_stats['avg_total_overhead_monocore'][v] / job_sample['num_cores']
+
 
     pp = pprint.PrettyPrinter(indent=4)
-
+    '''
     print("\navg_gq: {}".format(gq_avg))
     print("\ngq_avg_num_v: {}".format(gq_avg_num_v))
     print("\navg_t_record: {}".format(t_record_avg))
@@ -447,21 +547,11 @@ def time_analysis(args):
     pp.pprint(t_record_std)
     print("\nt_record_std_div_avg: {}")
     pp.pprint(t_record_std_div_avg)
+    '''
     # pp.pprint(exp_report2)
     if plot:
         generate_plots(res, ta_stages.keys(), input_dir)
-
-        """
-            zipped_job_d_master = zip(trace_avg_job_duration.get('y'), trace_avg_total_ta_master_stages.get('y'))
-            trace_percents_total_master = go.Scatter(
-                x=x_axis,
-                y=[(x-y)/y*100 for x,y in zipped_job_d_master],
-                name='total_master_perc'
-            )
-            data_perc = go.Data([trace_percents_total_master])
-
-            py.plot(data_perc, filename='pagerank_total_master_perc_'+input_dir.strip('/').split('/')[-1])
-        """
+        generate_plots2(resulting_stats, ta_stages.keys(), input_dir, num_v_set)
 
 
 def pro_runner(args):
