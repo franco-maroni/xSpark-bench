@@ -53,13 +53,12 @@ COMBINED_STATS = ['avg_total_with_avg_gq_and_ta_master',
 PLOT_EXEC_TIMES_STATS = SIMPLE_AVERAGE_STATS + COMBINED_STATS
 
 
-def compute_t_task(stages_struct, num_records, num_task=None):
+def get_records_read(stages_struct, num_records):
     """
     computes t_task for all the stages and modifies stages_struct to include it.
     :param stages_struct: data structure containing the
     :param num_records: total number of input records
-    :param num_task: number of tasks for each stages (currently uniform)
-    :returns t_tasks dictionary, t_tasks_num_v dictionary, num_tasks dictionary
+    :returns reads dictionary
     """
     reads = {}
     writes = {}
@@ -79,15 +78,28 @@ def compute_t_task(stages_struct, num_records, num_task=None):
             for parent_id in stage['parentsIds']:
                 reads[stage_id] += writes[str(parent_id)]
         writes[stage_id] = reads[stage_id] * stage['avg_io_factor']
+        stage['records_read'] = reads[stage_id]
+    return reads
+
+
+def compute_t_task(stages_struct, num_records, num_task=None):
+    """
+    computes t_task for all the stages and modifies stages_struct to include it.
+    :param stages_struct: data structure containing the
+    :param num_records: total number of input records
+    :param num_task: number of tasks for each stages (currently uniform)
+    :returns t_tasks dictionary, t_tasks_num_v dictionary, num_tasks dictionary
+    """
+    get_records_read(stages_struct, num_records)
+    for stage in stages_struct.values():
         if not num_task:
             num_task = stage['numtask']
-        stage['records_read'] = reads[stage_id]
         # compute t_task with avg_t_record and avg_gq
-        stage['t_task'] = stage['avg_t_record'] * reads[stage_id] / (num_task * stage['avg_gq'])
+        stage['t_task'] = stage['avg_t_record'] * stage['records_read'] / (num_task * stage['avg_gq'])
         num_v = str(int(num_records / 20))
         if num_v in stage['avg_t_record_num_v']:
             # compute t_task with "local" avg_t_record_num_v and avg_gq
-            stage['t_task_num_v'] = stage['avg_t_record_num_v'][num_v] * reads[stage_id] / (
+            stage['t_task_num_v'] = stage['avg_t_record_num_v'][num_v] * stage['records_read'] / (
                 num_task * stage['avg_gq'])
         else:
             stage['t_task_num_v'] = 0
