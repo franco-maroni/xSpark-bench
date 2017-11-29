@@ -19,10 +19,13 @@ import math
 import config
 from util.ssh_client import CustomSSHClient
 from plumbum.machines.paramiko_machine import ParamikoMachine
-from plumbum import BG
+from plumbum import BG, FG
 from util.plot_analyses import get_scatter, get_scatter2, get_layout, plot_figure
+from time import sleep
+from concurrent.futures import ThreadPoolExecutor
 
-D_VERT_SERVER_HOSTNAME = '40.84.157.107'
+
+D_VERT_SERVER_HOSTNAME = '40.84.228.208'
 BASE_JSON2MC_PATH = '/home/ubuntu/DICE-Verification/d-vert-server/d-vert-json2mc/'
 
 DEFAULT_NUM_RECORDS = 200000000
@@ -33,7 +36,7 @@ ESSENTIAL_FILES = ['app.json', 'app.dat', 'config.json', '*_time_analysis.json']
 JOB_STATS = ['actual_job_duration', 'total_ta_executor_stages', 'total_ta_master_stages', 'total_overhead_monocore',
              'GQ_master'] + ['total_percentile' + str(p) for p in run_ta.PERCENTILES]
 STAGES_STATS = ['io_factor', 't_record_ta_master', 's_GQ_ta_master', 's_avg_duration_ta_master',
-                's_avg_duration_ta_executor']
+                's_avg_duration_ta_executor', 't_avg_duration_ta_executor', 't_avg_duration_ta_master', 't_std_dev']
 
 JOB_STATS_BIG_JSON = ['actual_job_duration', 'num_v', 'num_cores']
 STAGES_STATS_BIG_JSON = ['add_to_end_taskset', 'actual_records_read', 's_GQ_ta_master', 's_GQ_ta_executor',
@@ -52,12 +55,18 @@ COMBINED_STATS = ['avg_total_with_avg_gq_and_ta_master',
 
 PLOT_EXEC_TIMES_STATS = SIMPLE_AVERAGE_STATS + COMBINED_STATS
 
+# t_task selection policies
+GQ_AVG_T_REC_AVG = 't_task'
+GQ_AVG_T_REC_LOC = 't_task_num_v'
+SIGMA_0_25 = 't_task_0_25_sigma'
+SIGMA_0_30 = 't_task_0_30_sigma'
 
-def get_records_read(stages_struct, num_records):
+def get_records_read(stages_struct, num_records, modify_stages_struct=False):
     """
-    computes t_task for all the stages and modifies stages_struct to include it.
+    computes the number of records read/write for all the stages and modifies stages_struct to include it.
     :param stages_struct: data structure containing the
     :param num_records: total number of input records
+    :param modify_stages_struct: enable modification of stages_struct by inserting the computed number f records read
     :returns reads dictionary
     """
     reads = {}
@@ -78,37 +87,62 @@ def get_records_read(stages_struct, num_records):
             for parent_id in stage['parentsIds']:
                 reads[stage_id] += writes[str(parent_id)]
         writes[stage_id] = reads[stage_id] * stage['avg_io_factor']
-        stage['records_read'] = reads[stage_id]
+        if modify_stages_struct:
+            stage['records_read'] = reads[stage_id]
     return reads
 
 
-def compute_t_task(stages_struct, num_records, num_task=None):
+def compute_t_task(stages_struct, num_records, num_cores, num_task=None, t_task_policy=GQ_AVG_T_REC_AVG):
     """
     computes t_task for all the stages and modifies stages_struct to include it.
     :param stages_struct: data structure containing the
     :param num_records: total number of input records
+    :param num_cores: number of cores in the cluster
     :param num_task: number of tasks for each stages (currently uniform)
+    :param t_task_policy: policy to select the t_task for verification
+            (that will be stored in stage['t_task_verification'])
     :returns t_tasks dictionary, t_tasks_num_v dictionary, num_tasks dictionary
     """
-    get_records_read(stages_struct, num_records)
-    for stage in stages_struct.values():
+    get_records_read(stages_struct, num_records, True)
+    for k, stage in stages_struct.items():
         if not num_task:
             num_task = stage['numtask']
         # compute t_task with avg_t_record and avg_gq
         stage['t_task'] = stage['avg_t_record'] * stage['records_read'] / (num_task * stage['avg_gq'])
-        num_v = str(int(num_records / 20))
-        if num_v in stage['avg_t_record_num_v']:
+        stage['t_task_local'] = {}
+        stage['t_task_avg'] = {}
+        stage['t_task_0_25_sigma_local'] = {}
+        stage['t_task_0_30_sigma_local'] = {}
+        num_batches = math.ceil(num_task / num_cores)
+        # TODO remove this approximation (it only works when rounded_tasks == num_tasks)
+        rounded_tasks = num_cores * num_batches
+        for v in stage['avg_t_record_num_v'].keys():
             # compute t_task with "local" avg_t_record_num_v and avg_gq
-            stage['t_task_num_v'] = stage['avg_t_record_num_v'][num_v] * stage['records_read'] / (
-                num_task * stage['avg_gq'])
+            tmp_reads = get_records_read(stages_struct, 20 * int(v))
+            stage['t_task_local'][v] = stage['avg_t_record_num_v'][v] * tmp_reads[k] / (rounded_tasks * stage['avg_gq'])
+            #stage['t_task_local'][v] = stage['avg_t_record_num_v'][v] * tmp_reads[k] / (num_task * stage['avg_gq'])
+            stage['t_task_avg'][v] = stage['avg_t_record'] * tmp_reads[k] / (rounded_tasks * stage['avg_gq'])
+            #stage['t_task_avg'][v] = stage['avg_t_record'] * tmp_reads[k] / (num_task * stage['avg_gq'])
+            stage['t_task_0_25_sigma_local'][v] = stage['avg_t_avg_duration_ta_master'][v] + 0.25 * \
+                                                                                             stage['avg_t_std_dev'][v]
+            stage['t_task_0_30_sigma_local'][v] = stage['avg_t_avg_duration_ta_master'][v] + 0.3 * \
+                                                                                             stage['avg_t_std_dev'][v]
+        num_v = str(int(num_records / 20))
+        if num_v in stage['t_task_local']:
+            stage['t_task_num_v'] = stage['t_task_local'][num_v]
+            stage['t_task_0_25_sigma'] = stage['t_task_0_25_sigma_local'][num_v]
+            stage['t_task_0_30_sigma'] = stage['t_task_0_30_sigma_local'][num_v]
         else:
             stage['t_task_num_v'] = 0
+            stage['t_task_0_25_sigma'] = 0
+            stage['t_task_0_30_sigma'] = 0
+        stage['t_task_verification'] = stage[t_task_policy]
     return {s['id']: s['t_task'] for s in stages_struct.values()}, \
            {s['id']: s['t_task_num_v'] for s in stages_struct.values()}, \
            {s['id']: num_task for s in stages_struct.values()}
 
 
-def build_generic_stages_struct2(profiled_stages, res):  # avg_gq, avg_t_record, avg_io, avg_gq_num_v, avg_t_record_num_v):
+def build_generic_stages_struct(profiled_stages, res):  # avg_gq, avg_t_record, avg_io, avg_gq_num_v, avg_t_record_num_v):
     generic_stages_struct = {}
     for k, v in profiled_stages.items():
         generic_stages_struct[k] = {}
@@ -122,6 +156,9 @@ def build_generic_stages_struct2(profiled_stages, res):  # avg_gq, avg_t_record,
         generic_stages_struct[k]['avg_t_record'] = np.mean(list(res['avg_t_record_ta_master'][k].values()))  #avg_t_record[k]
         generic_stages_struct[k]['avg_t_record_num_v'] = res['avg_t_record_ta_master'][k]  # avg_t_record_num_v[k]
         generic_stages_struct[k]['avg_io_factor'] = np.mean(list(res['avg_io_factor'][k].values()))  # avg_io[k]
+        generic_stages_struct[k]['avg_t_avg_duration_ta_master'] = res['avg_t_avg_duration_ta_master'][k]
+        generic_stages_struct[k]['avg_t_avg_duration_ta_executor'] = res['avg_t_avg_duration_ta_executor'][k]
+        generic_stages_struct[k]['avg_t_std_dev'] = res['avg_t_std_dev'][k]
     return generic_stages_struct
 
 
@@ -140,33 +177,50 @@ def generate_spark_context(args):
     else:
         with open(generic_stages_path[0]) as gsf:
             generic_stages_struct = json.load(gsf)
-            
-    compute_t_task(generic_stages_struct, num_records, num_tasks)
 
-    seq_duration = seq_duration_num_v = 0
+    t_task_policy = GQ_AVG_T_REC_LOC
+    compute_t_task(generic_stages_struct, num_records, num_tasks, t_task_policy)
+
+    seq_duration_avg_t_record = seq_duration_local_t_record = seq_duration_sigma_0_25 = selected_seq_duration = seq_duration_sigma_0_30 = 0
     for k, v in generic_stages_struct.items():
         if not num_tasks:
             num_tasks = v['numtask']
         else:
             v['numtask'] = num_tasks
-        seq_duration_num_v += v['t_task_num_v'] * math.ceil(num_tasks / num_cores)
-        seq_duration += v['t_task'] * math.ceil(num_tasks / num_cores)
+        num_batches = math.ceil(num_tasks / num_cores)
+        seq_duration_local_t_record += v['t_task_num_v'] * num_batches
+        seq_duration_avg_t_record += v['t_task'] * num_batches
+        seq_duration_sigma_0_25 += v['t_task_0_25_sigma'] * num_batches
+        seq_duration_sigma_0_30 += v['t_task_0_30_sigma'] * num_batches
+        selected_seq_duration += v[t_task_policy] * num_batches
+        print('S{}\t-> tmp "local" sequential duration: {}ms\t(+{})'.format(k, int(seq_duration_local_t_record),
+                                                                            v['t_task_num_v'] * num_batches))
+        print('S{}\t-> tmp average sequential duration: {}ms\t(+{})'.format(k, int(seq_duration_avg_t_record),
+                                                                            v['t_task'] * num_batches))
+        print('S{}\t-> tmp 0_25_sigma sequential duration: {}ms\t(+{})'.format(k, int(seq_duration_sigma_0_25),
+                                                                               v['t_task_0_25_sigma'] * num_batches))
+        print('S{}\t-> tmp 0_30_sigma sequential duration: {}ms\t(+{})'.format(k, int(seq_duration_sigma_0_30),
+                                                                               v['t_task_0_30_sigma'] * num_batches))
     if not deadlines:
-        deadlines = [int(seq_duration_num_v)]
-    print('estimated "local" sequential duration: {}ms'.format(int(seq_duration_num_v)))
-    print('estimated average sequential duration: {}ms'.format(int(seq_duration)))
+        deadlines = [int(selected_seq_duration)]
+    print('estimated "local" sequential duration: {}ms'.format(int(seq_duration_local_t_record)))
+    print('estimated average sequential duration: {}ms'.format(int(seq_duration_avg_t_record)))
+    print('estimated 0_25_sigma sequential duration: {}ms'.format(int(seq_duration_sigma_0_25)))
+    print('estimated 0_30_sigma sequential duration: {}ms'.format(int(seq_duration_sigma_0_30)))
 
+    context_files_struct = {}
     for d in deadlines:
         print('Generating JSON file for deadline {}'.format(d))
-        app_name = "{}_c{}_t{}_nr{}_tb{}_{}l_d{}_tc_{}_n_rounds_{}".format(analysis_id,
-                                                                      num_cores,
-                                                                      num_tasks,
-                                                                      num_records,
-                                                                      ta_cfg.TIME_BOUND,
-                                                                      "no_" if ta_cfg.NO_LOOPS else "",
-                                                                      d,
-                                                                      "parametric" if ta_cfg.PARAMETRIC_TC else "28_16",
-                                                                      "by1")
+        app_name = "{}_c{}_t{}_nr{}_tb{}_{}l_d{}_tc_{}_n_rounds_{}_{}".format(analysis_id,
+                                                                           num_cores,
+                                                                           num_tasks,
+                                                                           num_records,
+                                                                           ta_cfg.TIME_BOUND,
+                                                                           "no_" if ta_cfg.NO_LOOPS else "",
+                                                                           d,
+                                                                           "parametric" if ta_cfg.PARAMETRIC_TC else
+                                                                           "{}_16".format(num_cores),
+                                                                           "by1", t_task_policy)
         #        "exp_dir_acceleration_0_1000_c48_t40_no-l_d133000_tc_parametric_forall_nrounds_TEST",
         SPARK_CONTEXT = {
             "app_name": app_name,
@@ -189,8 +243,12 @@ def generate_spark_context(args):
         print("dumping to {}".format(out_path_context))
         with open(out_path_context, 'w') as outfile:
             json.dump(SPARK_CONTEXT, outfile, indent=4, sort_keys=True)
-        if run_verification:
-            ssh_launch_json2mc(out_path_context)
+        context_files_struct[d] = out_path_context
+    if run_verification:
+        with ThreadPoolExecutor(8) as executor:
+            for k, v in context_files_struct.items():
+                print("DEADLINE: {}\tFile: {}".format(k, v))
+                executor.submit(ssh_launch_json2mc, v)
 
 
 
@@ -321,7 +379,6 @@ def time_analysis(args):
             job_sample = ta_job
         for x in JOB_STATS:
             exp_report2[x][num_v].append(ta_job[x])
-        # exp_report[num_v]['GQ_executor'].append(ta_job['GQ_executor'])
         for k in ta_stages.keys():
             for x in STAGES_STATS:
                 exp_report2[x][k][num_v].append(ta_stages[k][x])
@@ -347,15 +404,17 @@ def time_analysis(args):
                 resulting_stats['avg_{}'.format(s)][k][v] = np.mean(list(exp_report2[s][k][v]))
                 resulting_stats['std_{}'.format(s)][k][v] = np.std(list(exp_report2[s][k][v]))
 
-    out_path_exp_rep2 = os.path.join(input_dir, '{}_exp_report_2.json'.format(analysis_id))
-    with open(out_path_exp_rep2, 'w+') as outfile:
+    out_path_exp_rep = os.path.join(input_dir, '{}_collected_stats.json'.format(analysis_id))
+    print("dumping collected_stats to {}".format(out_path_exp_rep))
+    with open(out_path_exp_rep, 'w+') as outfile:
         json.dump(exp_report2, outfile, indent=4, sort_keys=True)
-    out_path_res2 = os.path.join(input_dir, '{}_stats_2.json'.format(analysis_id))
-    with open(out_path_res2, 'w+') as outfile:
+    out_path_res = os.path.join(input_dir, '{}_aggregated_stats.json'.format(analysis_id))
+    print("dumping aggregated_stats to {}".format(out_path_res))
+    with open(out_path_res, 'w+') as outfile:
         json.dump(resulting_stats, outfile, indent=4, sort_keys=True)
 
     # build generic stages dict including all the average values for stats
-    generic_stages_dict = build_generic_stages_struct2(profiled_stages=stages_sample, res=resulting_stats)
+    generic_stages_dict = build_generic_stages_struct(profiled_stages=stages_sample, res=resulting_stats)
     out_path_generic_s = os.path.join(input_dir, '{}_generic_stages.json'.format(analysis_id))
     print("dumping generic_stages to {}".format(out_path_generic_s))
     with open(out_path_generic_s, 'w+') as outfile:
@@ -375,11 +434,12 @@ def time_analysis(args):
         for s in ta_stages.keys():
             ta_master = resulting_stats['avg_s_avg_duration_ta_master'][s][v]
             avg_gq = generic_stages_dict[s]['avg_gq']
+            avg_gq_num_v = generic_stages_dict[s]['avg_gq_num_v'][v]
             ta_executor = resulting_stats['avg_s_avg_duration_ta_executor'][s][v]
 
             resulting_stats['avg_total_with_avg_gq_and_ta_master'][v] += ta_master / avg_gq
             resulting_stats['avg_total_with_avg_gq_and_ta_executor'][v] += ta_executor / avg_gq
-            resulting_stats['avg_total_with_local_gq_and_ta_master'][v] += ta_master / avg_gq
+            resulting_stats['avg_total_with_local_gq_and_ta_master'][v] += ta_master / avg_gq_num_v
             resulting_stats['avg_total_with_avg_gq_and_avg_t_record_master'][v] += t_tasks[v][s] * math.ceil(
                 num_tasks[v][s] / num_cores)
             resulting_stats['avg_total_with_avg_gq_and_local_t_record_master'][v] += t_tasks_num_v[v][s] * math.ceil(
@@ -430,8 +490,11 @@ def ssh_launch_json2mc(filepath):
     and remotely launches a verification task in background
     :param filepath: path of the .json which has to be uploaded on the server and provided as a parameter to json2mc.py
     """
+    exp_dir = 'd4s_27_11'
     print('ssh_launch_json2mc({})'.format(filepath))
-    destination_path = os.path.join(BASE_JSON2MC_PATH, 'd4s', os.path.basename(filepath))
+    destination_path = os.path.join(BASE_JSON2MC_PATH, exp_dir, os.path.basename(filepath))
+    out_path = os.path.join(BASE_JSON2MC_PATH, exp_dir)
+    # log_path = os.path.join(BASE_JSON2MC_PATH, 'logs', '{}.log'.format(os.path.splitext(os.path.basename(filepath))[0]))
     print('connecting to {}'.format(D_VERT_SERVER_HOSTNAME))
     rem = ParamikoMachine(host=D_VERT_SERVER_HOSTNAME, keyfile=config.PRIVATE_KEY_PATH, user='ubuntu')
     print('uploading\n{}\nto\n{}:{}'.format(filepath, D_VERT_SERVER_HOSTNAME, destination_path))
@@ -442,11 +505,15 @@ def ssh_launch_json2mc(filepath):
         print('activating venv...')
         activate_venv()
         print('launching json2mc...')
-        f = run_json2mc['-T', 'spark', '--db', '-c', destination_path] & BG
+        # run_json2mc['-T', 'spark', '--db', '-c', destination_path, '-o', out_path] & FG
+        f = run_json2mc['-T', 'spark', '--db', '-c', destination_path, '-o', out_path] & BG
+        #f = (run_json2mc['-T', 'spark', '--db', '-c', destination_path] > 'pine.log')() & BG
+        sleep(3)
+        f.wait()
         if f.ready():
             print('Command exited with return_code {}\nSTDOUT:{}\nSTDERR:{}'.format(f.returncode, f.stdout, f.stderr))
         else:
-            print('Command running in background...')
+            print('Command running in background...\n{}'.format(f))
 
 
 

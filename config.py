@@ -32,15 +32,6 @@ AZ_VHD_IMAGE = {"StorageAccount": "xsparkstoragefranco",
                 "BlobContainer": "vhd-franco",
                 "Name": "xspark-dvert-n1.vhd"}  # csparkvm13-os.vhd  # vm-os.vhd  # xspark-dvert.vhd  # xspark-dvert-n1.vhd
 """AZURE VHD Image"""
-''' moved to credentials.py
-# ssh-keygen -t rsa -b 2048
-AZ_KEY_NAME = "az_id_rsa"
-"""Name of the RSA 2048 key"""
-AZ_PUB_KEY_PATH = '/home/ubuntu/.ssh/' + AZ_KEY_NAME + '.pub'
-"""AZURE Public Key Path (RSA 2048)"""
-AZ_PRV_KEY_PATH = '/home/ubuntu/.ssh/' + AZ_KEY_NAME
-"""AZURE Private Key Path (RSA 2048)"""
-'''
 AZ_RESOURCE_GROUP = 'xSpark-franco'
 """AZURE Resource Group"""
 AZ_STORAGE_ACCOUNT = 'xsparkstoragefranco'
