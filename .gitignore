@@ -141,3 +141,8 @@ spark-bench/
 spark_log_profiling/input_logs/
 
 .DS_STORE
+cfg_clusters\.ini
+
+old/
+
+credentials\.py

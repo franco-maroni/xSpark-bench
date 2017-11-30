@@ -22,7 +22,7 @@ from config import UPDATE_SPARK_DOCKER, DELETE_HDFS, SPARK_HOME, KILL_JAVA, SYNC
     RAM_DRIVER, BENCHMARK_PERF, BENCH_LINES, HADOOP_CONF, \
     CONFIG_DICT, HADOOP_HOME,\
     SPARK_2_HOME, BENCHMARK_BENCH, BENCH_CONF, LOG_LEVEL, CORE_ALLOCATION,DEADLINE_ALLOCATION,\
-    UPDATE_SPARK_BENCH, UPDATE_SPARK_PERF, NUM_INSTANCE, STAGE_ALLOCATION, HEURISTIC
+    UPDATE_SPARK_BENCH, UPDATE_SPARK_PERF, NUM_INSTANCE, STAGE_ALLOCATION, HEURISTIC, VAR_PAR_MAP
 from util.ssh_client import sshclient_from_node
 from util.utils import timing, between, get_cfg, write_cfg, open_cfg
 
@@ -314,8 +314,8 @@ def setup_master(node, slaves_ip, hdfs_master):
         current_cluster = cfg['main']['current_cluster']
         cfg[current_cluster] = {}
         # TODO check if needed
-        input_record = cfg['pagerank']['num_v'] if 'pagerank' in cfg and 'num_v' in cfg['pagerank'] else INPUT_RECORD
-        print("input_record: {}".format(input_record))
+        # input_record = cfg['pagerank']['num_v'] if 'pagerank' in cfg and 'num_v' in cfg['pagerank'] else INPUT_RECORD
+        # print("input_record: {}".format(input_record))
 
         print("Setup Master: PublicIp=" + node.public_ips[0] + " PrivateIp=" + node.private_ips[0])
         master_ip = get_ip(node)
@@ -742,6 +742,7 @@ def run_benchmark(nodes):
 
     with open_cfg(mode='w') as cfg:
         current_cluster = cfg['main']['current_cluster']
+        benchmark = cfg['main']['benchmark']
         hdfs_master = cfg['hdfs']['master_ip'] if 'hdfs' in cfg and 'master_ip' in cfg['hdfs'] else ''
         delete_hdfs = cfg.getboolean('main', 'delete_hdfs')
         max_executors = int(cfg['main']['max_executors']) if 'main' in cfg and 'max_executors' in cfg['main'] else len(nodes) - 1
@@ -803,12 +804,19 @@ def run_benchmark(nodes):
 
     # LANCIARE BENCHMARK
     if current_cluster == 'spark':
-        if 'pagerank' in cfg and 'num_v' in cfg['pagerank']:
+        if benchmark == 'pagerank':
             BENCH_CONF["PageRank"]["numV"] = literal_eval(cfg['pagerank']['num_v'])
             num_partitions = cfg['pagerank']['num_partitions']
             BENCH_CONF["PageRank"]["NUM_OF_PARTITIONS"] = (3, num_partitions)
             print('setting numV as {}'.format(BENCH_CONF["PageRank"]["numV"]))
             print('setting NUM_OF_PARTITIONS as {}'.format(BENCH_CONF["PageRank"]["NUM_OF_PARTITIONS"]))
+
+        if benchmark == 'kmeans':
+            BENCH_CONF["KMeans"]["NUM_OF_POINTS"] = literal_eval(cfg['kmeans']['num_of_points'])
+            num_partitions = cfg['kmeans']['num_partitions']
+            BENCH_CONF["KMeans"]["NUM_OF_PARTITIONS"] = (6, num_partitions)
+            print('setting NUM_OF_POINTS as {}'.format(BENCH_CONF["KMeans"]["NUM_OF_POINTS"]))
+            print('setting NUM_OF_PARTITIONS as {}'.format(BENCH_CONF["KMeans"]["NUM_OF_PARTITIONS"]))
 
         if len(BENCHMARK_PERF) > 0:
             print("Running Benchmark " + str(BENCHMARK_PERF))

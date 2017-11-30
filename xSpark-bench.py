@@ -1,4 +1,4 @@
-from config import PROVIDER, NUM_INSTANCE, NUM_RUN, CLUSTER_ID, TERMINATE, RUN, REBOOT, CLUSTER_MAP
+from config import PROVIDER, NUM_INSTANCE, NUM_RUN, CLUSTER_ID, TERMINATE, RUN, REBOOT, CLUSTER_MAP, VAR_PAR_MAP
 
 import libcloud.common.base
 import argparse
@@ -141,19 +141,24 @@ def terminate(args):
 
 def launch_exp(args):
     cluster_id = CLUSTER_MAP['spark']
-    num_v = args.num_v
+    var_par = args.var_par
+    bench = args.benchmark
     num_run = args.num_runs
     max_executors = args.max_executors
     num_partitions = args.num_partitions
-    for v in num_v:
+    for v in var_par:
         with utils.open_cfg(mode='w') as cfg:
             cfg['main'] = {}
-            cfg['pagerank'] = {}
-            cfg['pagerank']['num_v'] = '(2, ' + v + ')'
-            cfg['pagerank']['num_partitions'] = str(num_partitions)
+            cfg['main']['benchmark'] = bench
+            cfg[bench] = {}
+            cfg[bench][VAR_PAR_MAP[bench]['var_name']] = '({}, {})'.format(VAR_PAR_MAP[bench]['default'][0], v)
+            cfg[bench]['num_partitions'] = str(num_partitions)
             if max_executors:
                 cfg['main']['max_executors'] = max_executors
-        print(bold('Launch {} Experiments on {} with {} vertices...'.format(num_run, cluster_id, v)))
+        print(bold('Launch {} Experiments for benchmark {} on cluster {} with {}={}...'.format(num_run, bench,
+                                                                                               cluster_id,
+                                                                                               VAR_PAR_MAP[bench][
+                                                                                                   'var_name'], v)))
         run_xspark(current_cluster='spark', num_instance=0, num_run=num_run,
                    cluster_id=cluster_id, run=1, terminate=0, reboot=0)
         if args.profile:
@@ -217,7 +222,11 @@ def main():
                                    help='Maximum number of executors to be used in the experiments. '
                                         'If None, the number of executor will be equal to (number of Spark nodes - 1) '
                                         '[default: %(default)s]')
-    parser_launch_exp.add_argument('-v', '--num-v', dest='num_v', nargs='+', required=True, help="number of vertices")
+    parser_launch_exp.add_argument('-b', '--benchmark', default='pagerank', choices=['pagerank', 'kmeans'],
+                                   help='the benchmark application to run')
+    parser_launch_exp.add_argument('-v', '--variable-parameter', dest='var_par', nargs='+', required=True,
+                                   help="variable parameter for the selected benchmark "
+                                        "(it will be considered num_v for pagerank, num_of_points for kmeans)")
     parser_launch_exp.add_argument('-r', '--num-runs', default=1, type=int, dest='num_runs',
                                    help='Number of runs for each configuration')
     parser_launch_exp.add_argument('-p', '--num-partitions', required=True, type=int, dest='num_partitions',

@@ -124,8 +124,8 @@ if OFF_HEAP:
 OFF_HEAP_BYTES = 30720000000
 
 # Core Config
-CORE_VM = 16#16
-CORE_HT_VM = 16#16
+CORE_VM = 8#16
+CORE_HT_VM = 8#16
 # CORE_HT_VM = 2
 # CORE_VM = 2
 DISABLE_HT = 0
@@ -179,9 +179,9 @@ BENCHMARK_PERF = [
 """Spark-perf benchmark to execute"""
 
 BENCHMARK_BENCH = [
-     "PageRank",
+    # "PageRank",
     # "DecisionTree",
-    # "KMeans",
+     "KMeans"  # ,
     # "SVM"
 ]
 """Spark-bench benchmark to execute"""
@@ -405,4 +405,15 @@ CLUSTER_MAP = {
     'hdfs': 'CSPARKHDFS',
     'spark': 'CSPARKWORK',
     'generic': 'GENERIC'
+}
+
+VAR_PAR_MAP = {
+    'pagerank': {
+        'var_name': 'num_v',
+        'default': (2, 10000000)
+    },
+    'kmeans': {
+        'var_name': 'num_of_points',
+        'default': (2, 10000000)
+    }
 }

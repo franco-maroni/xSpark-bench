@@ -25,7 +25,7 @@ from time import sleep
 from concurrent.futures import ThreadPoolExecutor
 
 
-D_VERT_SERVER_HOSTNAME = '40.84.228.208'
+D_VERT_SERVER_HOSTNAME = '40.84.230.29'
 BASE_JSON2MC_PATH = '/home/ubuntu/DICE-Verification/d-vert-server/d-vert-json2mc/'
 
 DEFAULT_NUM_RECORDS = 200000000
@@ -38,7 +38,7 @@ JOB_STATS = ['actual_job_duration', 'total_ta_executor_stages', 'total_ta_master
 STAGES_STATS = ['io_factor', 't_record_ta_master', 's_GQ_ta_master', 's_avg_duration_ta_master',
                 's_avg_duration_ta_executor', 't_avg_duration_ta_executor', 't_avg_duration_ta_master', 't_std_dev']
 
-JOB_STATS_BIG_JSON = ['actual_job_duration', 'num_v', 'num_cores']
+JOB_STATS_BIG_JSON = ['actual_job_duration', 'num_v', 'num_cores', 'num_of_points']
 STAGES_STATS_BIG_JSON = ['add_to_end_taskset', 'actual_records_read', 's_GQ_ta_master', 's_GQ_ta_executor',
                          't_record_ta_executor', 't_record_ta_master', 'io_factor', 't_task_ta_master',
                          'task_durations']
@@ -60,6 +60,15 @@ GQ_AVG_T_REC_AVG = 't_task'
 GQ_AVG_T_REC_LOC = 't_task_num_v'
 SIGMA_0_25 = 't_task_0_25_sigma'
 SIGMA_0_30 = 't_task_0_30_sigma'
+
+NUM_RECORDS_FACTOR = {
+    'pagerank': 20,
+    'kmeans': 2
+}
+
+def get_num_records(bench, param):
+    return param * NUM_RECORDS_FACTOR[bench]
+
 
 def get_records_read(stages_struct, num_records, modify_stages_struct=False):
     """
@@ -92,7 +101,7 @@ def get_records_read(stages_struct, num_records, modify_stages_struct=False):
     return reads
 
 
-def compute_t_task(stages_struct, num_records, num_cores, num_task=None, t_task_policy=GQ_AVG_T_REC_AVG):
+def compute_t_task(stages_struct, num_records, num_cores, benchmark, num_task=None, t_task_policy=GQ_AVG_T_REC_AVG):
     """
     computes t_task for all the stages and modifies stages_struct to include it.
     :param stages_struct: data structure containing the
@@ -118,7 +127,7 @@ def compute_t_task(stages_struct, num_records, num_cores, num_task=None, t_task_
         rounded_tasks = num_cores * num_batches
         for v in stage['avg_t_record_num_v'].keys():
             # compute t_task with "local" avg_t_record_num_v and avg_gq
-            tmp_reads = get_records_read(stages_struct, 20 * int(v))
+            tmp_reads = get_records_read(stages_struct,  NUM_RECORDS_FACTOR[benchmark] * int(v))
             stage['t_task_local'][v] = stage['avg_t_record_num_v'][v] * tmp_reads[k] / (rounded_tasks * stage['avg_gq'])
             #stage['t_task_local'][v] = stage['avg_t_record_num_v'][v] * tmp_reads[k] / (num_task * stage['avg_gq'])
             stage['t_task_avg'][v] = stage['avg_t_record'] * tmp_reads[k] / (rounded_tasks * stage['avg_gq'])
@@ -127,7 +136,7 @@ def compute_t_task(stages_struct, num_records, num_cores, num_task=None, t_task_
                                                                                              stage['avg_t_std_dev'][v]
             stage['t_task_0_30_sigma_local'][v] = stage['avg_t_avg_duration_ta_master'][v] + 0.3 * \
                                                                                              stage['avg_t_std_dev'][v]
-        num_v = str(int(num_records / 20))
+        num_v = str(int(num_records / NUM_RECORDS_FACTOR[benchmark]))
         if num_v in stage['t_task_local']:
             stage['t_task_num_v'] = stage['t_task_local'][num_v]
             stage['t_task_0_25_sigma'] = stage['t_task_0_25_sigma_local'][num_v]
@@ -170,16 +179,23 @@ def generate_spark_context(args):
     num_cores = args.num_cores if args.num_cores else DEFAULT_NUM_CORES
     deadlines = args.deadlines
     num_tasks = args.num_tasks
+    time_bound = args.time_bound if args.time_bound else [ta_cfg.TIME_BOUND]
+
+    aggregated_stats_path = glob.glob(os.path.join(exp_dir, '{}_aggregated_stats.json'.format(analysis_id)))
     generic_stages_path = glob.glob(os.path.join(exp_dir, '{}_generic_stages.json'.format(analysis_id)))
-    if not generic_stages_path:
+    if not generic_stages_path or not aggregated_stats_path:
         print('{}_generic_stages.json FILE NOT FOUND!\nRUN PROFILING/TIME_ANALYSIS FIRST'.format(analysis_id))
         sys.exit(1)
     else:
         with open(generic_stages_path[0]) as gsf:
             generic_stages_struct = json.load(gsf)
-
+        print('opening {}'.format(aggregated_stats_path[0]))
+        with open(aggregated_stats_path[0]) as asf:
+            aggregated_stats = json.load(asf)
+            benchmark = aggregated_stats['benchmark_name']
     t_task_policy = GQ_AVG_T_REC_LOC
-    compute_t_task(generic_stages_struct, num_records, num_tasks, t_task_policy)
+    compute_t_task(stages_struct=generic_stages_struct, num_records=num_records, num_task=num_tasks,
+                   t_task_policy=t_task_policy, num_cores=num_cores, benchmark=benchmark)
 
     seq_duration_avg_t_record = seq_duration_local_t_record = seq_duration_sigma_0_25 = selected_seq_duration = seq_duration_sigma_0_30 = 0
     for k, v in generic_stages_struct.items():
@@ -209,52 +225,55 @@ def generate_spark_context(args):
     print('estimated 0_30_sigma sequential duration: {}ms'.format(int(seq_duration_sigma_0_30)))
 
     context_files_struct = {}
-    for d in deadlines:
-        print('Generating JSON file for deadline {}'.format(d))
-        app_name = "{}_c{}_t{}_nr{}_tb{}_{}l_d{}_tc_{}_n_rounds_{}_{}".format(analysis_id,
-                                                                           num_cores,
-                                                                           num_tasks,
-                                                                           num_records,
-                                                                           ta_cfg.TIME_BOUND,
-                                                                           "no_" if ta_cfg.NO_LOOPS else "",
-                                                                           d,
-                                                                           "parametric" if ta_cfg.PARAMETRIC_TC else
-                                                                           "{}_16".format(num_cores),
-                                                                           "by1", t_task_policy)
-        #        "exp_dir_acceleration_0_1000_c48_t40_no-l_d133000_tc_parametric_forall_nrounds_TEST",
-        SPARK_CONTEXT = {
-            "app_name": app_name,
-            "verification_params":
-                {
-                    "plugin": ta_cfg.PLUGIN,
-                    "time_bound": ta_cfg.TIME_BOUND,
-                    "parametric_tc": ta_cfg.PARAMETRIC_TC,
-                    "no_loops": ta_cfg.NO_LOOPS
-                },
-            "tot_cores": num_cores,
-            "analysis_type": "feasibility",
-            "deadline": d,
-            "max_time": d,
-            "tolerance": ta_cfg.TOLERANCE,
-            "stages": generic_stages_struct
-        }
+    for tb in time_bound:
+        for d in deadlines:
+            print('Generating JSON file for deadline {}, time_bound: {}'.format(d, tb))
+            app_name = "{}_c{}_t{}_nr{}_tb{}_{}l_d{}_tc_{}_n_rounds_{}_{}".format(analysis_id,
+                                                                               num_cores,
+                                                                               num_tasks,
+                                                                               num_records,
+                                                                               tb,
+                                                                               "no_" if ta_cfg.NO_LOOPS else "",
+                                                                               d,
+                                                                               "parametric" if ta_cfg.PARAMETRIC_TC else
+                                                                               num_cores,
+                                                                               "by1", t_task_policy)
+            #        "exp_dir_acceleration_0_1000_c48_t40_no-l_d133000_tc_parametric_forall_nrounds_TEST",
+            SPARK_CONTEXT = {
+                "app_name": app_name,
+                "app_type": benchmark,
+                "verification_params":
+                    {
+                        "plugin": ta_cfg.PLUGIN,
+                        "time_bound": tb,
+                        "parametric_tc": ta_cfg.PARAMETRIC_TC,
+                        "no_loops": ta_cfg.NO_LOOPS
+                    },
+                "tot_cores": num_cores,
+                "analysis_type": "feasibility",
+                "deadline": d,
+                "max_time": d,
+                "tolerance": ta_cfg.TOLERANCE,
+                "stages": generic_stages_struct
+            }
 
-        out_path_context = os.path.join(exp_dir, '{}_context.json'.format(app_name))
-        print("dumping to {}".format(out_path_context))
-        with open(out_path_context, 'w') as outfile:
-            json.dump(SPARK_CONTEXT, outfile, indent=4, sort_keys=True)
-        context_files_struct[d] = out_path_context
+            out_path_context = os.path.join(exp_dir, '{}_context.json'.format(app_name))
+            print("dumping to {}".format(out_path_context))
+            with open(out_path_context, 'w') as outfile:
+                json.dump(SPARK_CONTEXT, outfile, indent=4, sort_keys=True)
+            context_files_struct['{}__{}'.format(tb, d)] = out_path_context
     if run_verification:
         with ThreadPoolExecutor(8) as executor:
             for k, v in context_files_struct.items():
-                print("DEADLINE: {}\tFile: {}".format(k, v))
+                print("TIMEBOUND__DEADLINE: {}\nFile: {}".format(k, v))
                 executor.submit(ssh_launch_json2mc, v)
 
 
-
-def generate_plots2(res, stages_keys, input_dir, num_v_set):
-    x_axis = list(num_v_set)
-    x_axis.sort()
+def generate_plots(res, stages_keys, input_dir, num_v_set, benchmark):
+    x_axis_int = [int(v) for v in num_v_set]
+    x_axis_int.sort()
+    x_axis = [str(v) for v in x_axis_int]
+    print('X_AXIS: {}'.format(x_axis))
 
     trace_list = [get_scatter2(x_axis, res, stat) for stat in PLOT_EXEC_TIMES_STATS]
 
@@ -266,9 +285,9 @@ def generate_plots2(res, stages_keys, input_dir, num_v_set):
     trace_list_std_t_record = []
     for k in stages_keys:
         trace_list_avg_gq.append(get_scatter2(x_axis, res['avg_s_GQ_ta_master'], str(k)))
-        trace_list_avg_gq.append(get_scatter2(x_axis, res['std_s_GQ_ta_master'], str(k)))
+        trace_list_std_gq.append(get_scatter2(x_axis, res['std_s_GQ_ta_master'], str(k)))
         trace_list_avg_t_record.append(get_scatter2(x_axis, res['avg_t_record_ta_master'], str(k)))
-        trace_list_avg_t_record.append(get_scatter2(x_axis, res['std_t_record_ta_master'], str(k)))
+        trace_list_std_t_record.append(get_scatter2(x_axis, res['std_t_record_ta_master'], str(k)))
 
     data_gq_stages = go.Data(trace_list_avg_gq)
     data_t_record_stages = go.Data(trace_list_avg_t_record)
@@ -277,19 +296,19 @@ def generate_plots2(res, stages_keys, input_dir, num_v_set):
                 title='average_GQ_{}'.format(input_dir.strip('/').split('/')[-1]),
                 x_axis_label="Num Vertices",
                 y_axis_label='Value ([0, 1])',
-                out_folder=IMGS_FOLDER)
+                out_folder=input_dir)
 
     plot_figure(data=data_t_record_stages,
                 title='average_record_time_{}'.format(input_dir.strip('/').split('/')[-1]),
                 x_axis_label="Num Vertices",
                 y_axis_label='Time (ms)',
-                out_folder=IMGS_FOLDER)
+                out_folder=input_dir)
 
     plot_figure(data=data_exec_times,
-                title='pagerank_execution_times_{}'.format(input_dir.strip('/').split('/')[-1]),
+                title='{}_execution_times_{}'.format(benchmark, input_dir.strip('/').split('/')[-1]),
                 x_axis_label="Num Vertices",
                 y_axis_label='Time (ms)',
-                out_folder=IMGS_FOLDER)
+                out_folder=input_dir)
 
 def extract_essential_files(input_dir):
     analysis_files_dir = os.path.abspath(os.path.join(os.path.dirname(input_dir.strip(os.sep)),
@@ -320,7 +339,10 @@ def collect_all_time_analysis(exp_dir):
                 tmp_exp_report = {'job': {}, 'stages': {}}
                 tmp_exp_report['job']['id'] = os.path.basename(t)
                 for x in JOB_STATS_BIG_JSON:
-                    tmp_exp_report['job'][x] = cur_ta['job'][x]
+                    try:
+                        tmp_exp_report['job'][x] = cur_ta['job'][x]
+                    except KeyError as e:
+                        print("Key not found: {}".format(e))
                 for k, v in cur_ta['stages'].items():
                     tmp_exp_report['stages'][k] = {}
                     for x in STAGES_STATS_BIG_JSON:
@@ -370,7 +392,9 @@ def time_analysis(args):
             else:  # if precomputed analysis is not available, launch time_analysis on current directory d
                 ta_job, ta_stages = run_ta.main(d)
         # save numV from configuration files of current directory
-        num_v = str(ta_job['num_v'][1])
+        benchmark = ta_job['benchmark_name']
+        par_var_name = config.VAR_PAR_MAP[benchmark]['var_name']
+        num_v = str(ta_job[par_var_name][1])
         num_v_set.add(num_v)
         if not stages_sample:  # initialize all the data structures that will be used to store statistics
             for x in STAGES_STATS:
@@ -382,7 +406,7 @@ def time_analysis(args):
         for k in ta_stages.keys():
             for x in STAGES_STATS:
                 exp_report2[x][k][num_v].append(ta_stages[k][x])
-
+        exp_report2['benchmark_name'] = benchmark
     if collect_all_ta:
         collect_all_time_analysis(input_dir)
     if extract_essentials:
@@ -403,7 +427,7 @@ def time_analysis(args):
             for v in num_v_set:
                 resulting_stats['avg_{}'.format(s)][k][v] = np.mean(list(exp_report2[s][k][v]))
                 resulting_stats['std_{}'.format(s)][k][v] = np.std(list(exp_report2[s][k][v]))
-
+    resulting_stats['benchmark_name'] = benchmark
     out_path_exp_rep = os.path.join(input_dir, '{}_collected_stats.json'.format(analysis_id))
     print("dumping collected_stats to {}".format(out_path_exp_rep))
     with open(out_path_exp_rep, 'w+') as outfile:
@@ -430,20 +454,21 @@ def time_analysis(args):
             resulting_stats[x][v] = 0
     num_cores = job_sample['num_cores']
     for v in num_v_set:
-        t_tasks[v], t_tasks_num_v[v], num_tasks[v] = compute_t_task(generic_stages_dict, int(v) * 20)
+        t_tasks[v], t_tasks_num_v[v], num_tasks[v] = compute_t_task(stages_struct=generic_stages_dict,
+                                                                    num_records=int(v) * NUM_RECORDS_FACTOR[benchmark],
+                                                                    num_cores=num_cores, benchmark=benchmark)
         for s in ta_stages.keys():
             ta_master = resulting_stats['avg_s_avg_duration_ta_master'][s][v]
             avg_gq = generic_stages_dict[s]['avg_gq']
             avg_gq_num_v = generic_stages_dict[s]['avg_gq_num_v'][v]
             ta_executor = resulting_stats['avg_s_avg_duration_ta_executor'][s][v]
+            num_batches = math.ceil(num_tasks[v][s] / num_cores)
 
             resulting_stats['avg_total_with_avg_gq_and_ta_master'][v] += ta_master / avg_gq
             resulting_stats['avg_total_with_avg_gq_and_ta_executor'][v] += ta_executor / avg_gq
             resulting_stats['avg_total_with_local_gq_and_ta_master'][v] += ta_master / avg_gq_num_v
-            resulting_stats['avg_total_with_avg_gq_and_avg_t_record_master'][v] += t_tasks[v][s] * math.ceil(
-                num_tasks[v][s] / num_cores)
-            resulting_stats['avg_total_with_avg_gq_and_local_t_record_master'][v] += t_tasks_num_v[v][s] * math.ceil(
-                num_tasks[v][s] / num_cores)
+            resulting_stats['avg_total_with_avg_gq_and_avg_t_record_master'][v] += t_tasks[v][s] * num_batches
+            resulting_stats['avg_total_with_avg_gq_and_local_t_record_master'][v] += t_tasks_num_v[v][s] * num_batches
         resulting_stats['avg_total_with_avg_gq_and_ta_executor_plus_overhead'][v] = \
             resulting_stats['avg_total_with_avg_gq_and_ta_executor'][v] + \
             resulting_stats['avg_total_overhead_monocore'][v] / num_cores
@@ -453,7 +478,7 @@ def time_analysis(args):
     # pp.pprint(exp_report2)
     if plot:
         # generate_plots(res, ta_stages.keys(), input_dir)
-        generate_plots2(resulting_stats, ta_stages.keys(), input_dir, num_v_set)
+        generate_plots(resulting_stats, ta_stages.keys(), input_dir, num_v_set, benchmark)
 
 
 def pro_runner(args):
@@ -568,6 +593,10 @@ if __name__ == "__main__":
     parser_gen.add_argument("-d", "--deadlines", dest="deadlines", type=int, nargs='+',
                            help="deadlines to be considered in json context generation"
                                 "[default: %(default)s]")
+    parser_gen.add_argument("--time-bound", dest="time_bound", type=int, nargs='+',
+                            help="time bounds to be considered in json context generation"
+                                 "[default: %(default)s]")
+
     parser_gen.add_argument("-v", "--verify", dest="verify", action="store_true",
                             help="launches verification task of the generated file "
                                  "on a remote server ({})".format(D_VERT_SERVER_HOSTNAME))
