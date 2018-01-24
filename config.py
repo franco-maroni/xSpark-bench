@@ -100,7 +100,7 @@ HDFS_MASTER = "10.0.0.4"  # use private ip for azure!
 SPARK_SEQ_HOME = "/opt/spark-seq/"      # "sequential" Spark home directory
 SPARK_2_HOME = "/opt/spark/"            # regular Spark home directory
 C_SPARK_HOME = "/usr/local/spark/"      # "controlled" spark home directory
-SPARK_HOME = SPARK_2_HOME
+SPARK_HOME = SPARK_SEQ_HOME
 """Location of Spark in the ami"""
 
 LOG_LEVEL = "INFO"
@@ -124,8 +124,8 @@ if OFF_HEAP:
 OFF_HEAP_BYTES = 30720000000
 
 # Core Config
-CORE_VM = 8#16
-CORE_HT_VM = 8#16
+CORE_VM = 10       # max 16
+CORE_HT_VM = 10     # max 16
 # CORE_HT_VM = 2
 # CORE_VM = 2
 DISABLE_HT = 0
@@ -171,7 +171,7 @@ BENCHMARK_PERF = [
     # "scala-agg-by-key",
     # "scala-agg-by-key-int",
     # "scala-agg-by-key-naive",
-    # "scala-sort-by-key",
+     "scala-sort-by-key"#,
     # "scala-sort-by-key-int",
     # "scala-count",
     # "scala-count-w-fltr",
@@ -181,7 +181,7 @@ BENCHMARK_PERF = [
 BENCHMARK_BENCH = [
     # "PageRank",
     # "DecisionTree",
-     "KMeans"  # ,
+    # "KMeans",
     # "SVM"
 ]
 """Spark-bench benchmark to execute"""
@@ -203,7 +203,11 @@ BENCH_CONF = {
         "ScaleFactor": 5
     },
     "scala-sort-by-key": {
-        "ScaleFactor": 25
+        "ScaleFactor": 13,
+#        "skew": 0,
+        "num-partitions": 100,
+        "unique-keys": 100,
+        "reduce-tasks": 100
     },
     "scala-sort-by-key-int": {
         "ScaleFactor": 25
@@ -400,11 +404,12 @@ print("Schedule : "
 UPDATE_SPARK_BENCH = False
 UPDATE_SPARK_PERF = False
 
+SPARK_PERF_FOLDER = "spark-perf"
 
 CLUSTER_MAP = {
     'hdfs': 'CSPARKHDFS',
     'spark': 'CSPARKWORK',
-    'generic': 'GENERIC'
+    'generic': 'ZOT'
 }
 
 VAR_PAR_MAP = {
@@ -415,5 +420,9 @@ VAR_PAR_MAP = {
     'kmeans': {
         'var_name': 'num_of_points',
         'default': (2, 10000000)
+    },
+    'sort_by_key': {
+        'var_name': 'scale_factor',
+        'default': (0, 15)
     }
 }

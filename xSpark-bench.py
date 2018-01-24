@@ -123,11 +123,21 @@ def submit(args):
     raise NotImplementedError()
 
 
-def reboot(args):
-    cluster = args.cluster
+def reboot_cluster(cluster):
     cluster_id = CLUSTER_MAP[cluster]
     print(bold('Reboot {}...'.format(cluster_id)))
     run_xspark(current_cluster=cluster, num_instance=0, cluster_id=cluster_id, run=0, terminate=0, reboot=1)
+
+
+def reboot(args):
+    cluster = args.cluster
+    if cluster == 'all':
+        reboot_cluster('hdfs')
+        reboot_cluster('spark')
+    else:
+        reboot_cluster(cluster)
+
+
 
 
 def terminate(args):
@@ -214,19 +224,20 @@ def main():
     parser_setup.add_argument('-y', '--yes', dest='assume_yes', action='store_true',
                               help='Assume yes to the confirmation queries')
 
-    parser_reboot.add_argument('cluster', choices=['hdfs', 'spark', 'all'], help='The specified cluster')
+    parser_reboot.add_argument('cluster', choices=['hdfs', 'spark', 'all', 'generic'], help='The specified cluster')
 
-    parser_terminate.add_argument('cluster', choices=['hdfs', 'spark', 'all'], help='The specified cluster')
+    parser_terminate.add_argument('cluster', choices=['hdfs', 'spark', 'all', 'generic'], help='The specified cluster')
 
     parser_launch_exp.add_argument('-e', '--executors', default=None, type=int, dest='max_executors',
                                    help='Maximum number of executors to be used in the experiments. '
                                         'If None, the number of executor will be equal to (number of Spark nodes - 1) '
                                         '[default: %(default)s]')
-    parser_launch_exp.add_argument('-b', '--benchmark', default='pagerank', choices=['pagerank', 'kmeans'],
-                                   help='the benchmark application to run')
+    parser_launch_exp.add_argument('-b', '--benchmark', default='pagerank', choices=['pagerank', 'kmeans', 'sort_by_key'],
+                                   required=True, help='the benchmark application to run')
     parser_launch_exp.add_argument('-v', '--variable-parameter', dest='var_par', nargs='+', required=True,
                                    help="variable parameter for the selected benchmark "
-                                        "(it will be considered num_v for pagerank, num_of_points for kmeans)")
+                                        "(it will be considered num_v for pagerank, num_of_points for kmeans,"
+                                        "scale_factor for sort_by_key)")
     parser_launch_exp.add_argument('-r', '--num-runs', default=1, type=int, dest='num_runs',
                                    help='Number of runs for each configuration')
     parser_launch_exp.add_argument('-p', '--num-partitions', required=True, type=int, dest='num_partitions',
