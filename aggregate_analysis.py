@@ -23,14 +23,23 @@ from plumbum import BG, FG
 from util.plot_analyses import get_scatter, get_scatter2, get_layout, plot_figure
 from time import sleep
 from concurrent.futures import ThreadPoolExecutor
+import random
 
+MAX_WORKERS = 4
 
-D_VERT_SERVER_HOSTNAME = '40.84.230.29'
-BASE_JSON2MC_PATH = '/home/ubuntu/DICE-Verification/d-vert-server/d-vert-json2mc/'
+D_VERT_SERVER_HOSTNAME = {'azure': '40.84.230.29',
+                          'fm_biased': 'planetlab1.elet.polimi.it'}
+D_VERT_SERVER_USER = {'azure': 'ubuntu',
+                      'fm_biased': 'fmbiased'}
+BASE_JSON2MC_PATH = {'azure': '/home/ubuntu/DICE-Verification/d-vert-server/d-vert-json2mc/',
+                     'fm_biased': '/home/fmbiased/DICE/Francesco/d4s/d-vert-server/d-vert-json2mc'}
+
+EXP_DIR = os.path.join('d4s_fm2018', 'dbm')
 
 DEFAULT_NUM_RECORDS = 200000000
 DEFAULT_NUM_CORES = 16
-IMGS_FOLDER = 'imgs_local'
+IMGS_FOLDER = 'imgs'
+CONTEXTS_FOLDER = 'contexts'
 
 ESSENTIAL_FILES = ['app.json', 'app.dat', 'config.json', '*_time_analysis.json']
 JOB_STATS = ['actual_job_duration', 'total_ta_executor_stages', 'total_ta_master_stages', 'total_overhead_monocore',
@@ -63,7 +72,8 @@ SIGMA_0_30 = 't_task_0_30_sigma'
 
 NUM_RECORDS_FACTOR = {
     'pagerank': 20,
-    'kmeans': 2
+    'kmeans': 2,
+    'sort_by_key': 20000000
 }
 
 def get_num_records(bench, param):
@@ -136,7 +146,9 @@ def compute_t_task(stages_struct, num_records, num_cores, benchmark, num_task=No
                                                                                              stage['avg_t_std_dev'][v]
             stage['t_task_0_30_sigma_local'][v] = stage['avg_t_avg_duration_ta_master'][v] + 0.3 * \
                                                                                              stage['avg_t_std_dev'][v]
+        print('num_records: {}'.format(num_records))
         num_v = str(int(num_records / NUM_RECORDS_FACTOR[benchmark]))
+        print('if {} in {}:'.format(num_v, stage['t_task_local']))
         if num_v in stage['t_task_local']:
             stage['t_task_num_v'] = stage['t_task_local'][num_v]
             stage['t_task_0_25_sigma'] = stage['t_task_0_25_sigma_local'][num_v]
@@ -160,7 +172,7 @@ def build_generic_stages_struct(profiled_stages, res):  # avg_gq, avg_t_record, 
         generic_stages_struct[k]['parentsIds'] = v['parent_ids']
         generic_stages_struct[k]['skipped'] = v['skipped']
         generic_stages_struct[k]['numtask'] = v['num_task']
-        generic_stages_struct[k]['avg_gq'] = np.mean(list(res['avg_s_GQ_ta_master'][k].values()))  #avg_gq[k]
+        generic_stages_struct[k]['avg_gq'] = np.mean(list(res['avg_s_GQ_ta_master'][k].values()))  # avg_gq[k]
         generic_stages_struct[k]['avg_gq_num_v'] = res['avg_s_GQ_ta_master'][k]  # avg_gq_num_v[k]
         generic_stages_struct[k]['avg_t_record'] = np.mean(list(res['avg_t_record_ta_master'][k].values()))  #avg_t_record[k]
         generic_stages_struct[k]['avg_t_record_num_v'] = res['avg_t_record_ta_master'][k]  # avg_t_record_num_v[k]
@@ -171,32 +183,7 @@ def build_generic_stages_struct(profiled_stages, res):  # avg_gq, avg_t_record, 
     return generic_stages_struct
 
 
-def generate_spark_context(args):
-    exp_dir = os.path.abspath(args.exp_dir)
-    run_verification = args.verify
-    analysis_id = exp_dir.strip('/').split('/')[-1]
-    num_records = args.num_records if args.num_records else DEFAULT_NUM_RECORDS
-    num_cores = args.num_cores if args.num_cores else DEFAULT_NUM_CORES
-    deadlines = args.deadlines
-    num_tasks = args.num_tasks
-    time_bound = args.time_bound if args.time_bound else [ta_cfg.TIME_BOUND]
-
-    aggregated_stats_path = glob.glob(os.path.join(exp_dir, '{}_aggregated_stats.json'.format(analysis_id)))
-    generic_stages_path = glob.glob(os.path.join(exp_dir, '{}_generic_stages.json'.format(analysis_id)))
-    if not generic_stages_path or not aggregated_stats_path:
-        print('{}_generic_stages.json FILE NOT FOUND!\nRUN PROFILING/TIME_ANALYSIS FIRST'.format(analysis_id))
-        sys.exit(1)
-    else:
-        with open(generic_stages_path[0]) as gsf:
-            generic_stages_struct = json.load(gsf)
-        print('opening {}'.format(aggregated_stats_path[0]))
-        with open(aggregated_stats_path[0]) as asf:
-            aggregated_stats = json.load(asf)
-            benchmark = aggregated_stats['benchmark_name']
-    t_task_policy = GQ_AVG_T_REC_LOC
-    compute_t_task(stages_struct=generic_stages_struct, num_records=num_records, num_task=num_tasks,
-                   t_task_policy=t_task_policy, num_cores=num_cores, benchmark=benchmark)
-
+def calculate_sequential_duration(generic_stages_struct, num_tasks, num_cores, t_task_policy):
     seq_duration_avg_t_record = seq_duration_local_t_record = seq_duration_sigma_0_25 = selected_seq_duration = seq_duration_sigma_0_30 = 0
     for k, v in generic_stages_struct.items():
         if not num_tasks:
@@ -217,27 +204,72 @@ def generate_spark_context(args):
                                                                                v['t_task_0_25_sigma'] * num_batches))
         print('S{}\t-> tmp 0_30_sigma sequential duration: {}ms\t(+{})'.format(k, int(seq_duration_sigma_0_30),
                                                                                v['t_task_0_30_sigma'] * num_batches))
-    if not deadlines:
-        deadlines = [int(selected_seq_duration)]
+
     print('estimated "local" sequential duration: {}ms'.format(int(seq_duration_local_t_record)))
     print('estimated average sequential duration: {}ms'.format(int(seq_duration_avg_t_record)))
     print('estimated 0_25_sigma sequential duration: {}ms'.format(int(seq_duration_sigma_0_25)))
     print('estimated 0_30_sigma sequential duration: {}ms'.format(int(seq_duration_sigma_0_30)))
+    return selected_seq_duration
 
+
+def generate_spark_context(args):
+    exp_dir = os.path.abspath(args.exp_dir)
+    run_verification = args.verify
+    analysis_id = exp_dir.strip('/').split('/')[-1]
+    num_records = args.num_records if args.num_records else DEFAULT_NUM_RECORDS
+    num_cores = args.num_cores if args.num_cores else DEFAULT_NUM_CORES
+    deadlines = args.deadlines
+    num_tasks = args.num_tasks
+    time_bound = args.time_bound if args.time_bound else [ta_cfg.TIME_BOUND]
+    server = args.server
+    engine = args.engine
+    max_workers = args.max_workers if args.max_workers else MAX_WORKERS
+    labeling = args.labeling
+    print('generate_spark_context for num_records: {}'.format(num_records))
+    aggregated_stats_path = glob.glob(os.path.join(exp_dir, '{}_aggregated_stats.json'.format(analysis_id)))
+    generic_stages_path = glob.glob(os.path.join(exp_dir, '{}_generic_stages.json'.format(analysis_id)))
+    if not generic_stages_path or not aggregated_stats_path:
+        print('{}_generic_stages.json FILE NOT FOUND!\nRUN PROFILING/TIME_ANALYSIS FIRST'.format(analysis_id))
+        sys.exit(1)
+    else:
+        with open(generic_stages_path[0]) as gsf:
+            generic_stages_struct = json.load(gsf)
+        print('opening {}'.format(aggregated_stats_path[0]))
+        with open(aggregated_stats_path[0]) as asf:
+            aggregated_stats = json.load(asf)
+            benchmark = aggregated_stats['benchmark_name']
+    t_task_policy = GQ_AVG_T_REC_LOC
+    compute_t_task(stages_struct=generic_stages_struct, num_records=num_records, num_task=num_tasks,
+                   t_task_policy=t_task_policy, num_cores=num_cores, benchmark=benchmark)
+
+    selected_seq_duration = calculate_sequential_duration(generic_stages_struct=generic_stages_struct,
+                                                          num_tasks=num_tasks, num_cores=num_cores,
+                                                          t_task_policy=t_task_policy)
+
+    if not deadlines:
+        deadlines = [int(selected_seq_duration)]
+    contexts_dir = os.path.join(exp_dir, CONTEXTS_FOLDER)
     context_files_struct = {}
+    range_end = deadlines[0]
+    reverse_deadlines_list = list(reversed(range(range_end - 10, range_end, 1)))
     for tb in time_bound:
+     #   for d in reverse_deadlines_list:
         for d in deadlines:
             print('Generating JSON file for deadline {}, time_bound: {}'.format(d, tb))
-            app_name = "{}_c{}_t{}_nr{}_tb{}_{}l_d{}_tc_{}_n_rounds_{}_{}".format(analysis_id,
-                                                                               num_cores,
-                                                                               num_tasks,
-                                                                               num_records,
-                                                                               tb,
-                                                                               "no_" if ta_cfg.NO_LOOPS else "",
-                                                                               d,
-                                                                               "parametric" if ta_cfg.PARAMETRIC_TC else
-                                                                               num_cores,
-                                                                               "by1", t_task_policy)
+            app_name = "{}_c{}_t{}_nr{}_tb{}_{}l_d{}" \
+                       "_tc_{}_n_rounds_{}_{}_{}".format(analysis_id,
+                                                         num_cores,
+                                                         num_tasks,
+                                                         num_records,
+                                                         tb,
+                                                         "no_" if ta_cfg.NO_LOOPS else "",
+                                                         d,
+                                                         "parametric" if ta_cfg.PARAMETRIC_TC else
+                                                         '{}_{}'.format(num_cores,
+                                                                        num_cores -
+                                                                        num_tasks % num_cores),
+                                                         "by1", t_task_policy,
+                                                         "label" if labeling else "no_label")
             #        "exp_dir_acceleration_0_1000_c48_t40_no-l_d133000_tc_parametric_forall_nrounds_TEST",
             SPARK_CONTEXT = {
                 "app_name": app_name,
@@ -254,19 +286,75 @@ def generate_spark_context(args):
                 "deadline": d,
                 "max_time": d,
                 "tolerance": ta_cfg.TOLERANCE,
-                "stages": generic_stages_struct
+                "stages": generic_stages_struct,
+                "labeling": True if labeling else False
             }
 
-            out_path_context = os.path.join(exp_dir, '{}_context.json'.format(app_name))
+            utils.make_sure_path_exists(contexts_dir)
+            out_path_context = os.path.join(contexts_dir, '{}_context.json'.format(app_name))
             print("dumping to {}".format(out_path_context))
             with open(out_path_context, 'w') as outfile:
                 json.dump(SPARK_CONTEXT, outfile, indent=4, sort_keys=True)
             context_files_struct['{}__{}'.format(tb, d)] = out_path_context
     if run_verification:
-        with ThreadPoolExecutor(8) as executor:
-            for k, v in context_files_struct.items():
+        od = collections.OrderedDict(sorted(context_files_struct.items(), reverse=True))
+        with ThreadPoolExecutor(max_workers) as executor:
+            for k, v in od.items():
                 print("TIMEBOUND__DEADLINE: {}\nFile: {}".format(k, v))
-                executor.submit(ssh_launch_json2mc, v)
+                executor.submit(ssh_launch_json2mc, v, server, engine, labeling)
+
+
+def launch_verification(args):
+    json_path = args.json
+    tasks = args.num_tasks
+    labeling = args.labeling
+    server = args.server
+    engine = args.engine
+    max_workers = args.max_workers if args.max_workers else MAX_WORKERS
+    run_verification = args.verify
+    with open(json_path) as cf:
+        context = json.load(cf)
+    deadlines = args.deadlines if args.deadlines else [context['deadline']]
+    print("DEADLINES: {}".format(deadlines))
+    time_bound = args.time_bound if args.time_bound else [context['verification_params']['time_bound']]
+    context['tot_cores'] = args.num_cores if args.num_cores else context['tot_cores']
+    skipped_stages = []
+    if tasks:
+        for k,v in context["stages"].items():
+            v['numtask'] = tasks
+    for k, v in context["stages"].items():
+        if 't_task_verification' not in v:
+            if 'duration' in v:
+                v['t_task_verification'] = v['duration']/v['numtask']
+            else:
+                skipped_stages.append(k)
+    for s in skipped_stages:
+        context["stages"].pop(s)
+    contexts_dir = os.path.join(os.path.dirname(json_path), 'generated_contexts')
+    context_files_struct = {}
+    range_end = deadlines[0]
+    reverse_deadlines_list = list(reversed(range(range_end - 10, range_end, 1)))
+    for tb in time_bound:
+        context['verification_params']['time_bound'] = tb
+        #   for d in reverse_deadlines_list:
+        for d in deadlines:
+            app_name = '{}_c{}_t{}_tb{}_d{}_{}'.format(context['app_type'], context['tot_cores'],
+                                                       tasks if tasks else 'default', tb, d,
+                                                       'label' if labeling else 'NO_label')
+            context['app_name'] = app_name
+            context['deadline'] = context['max_time'] = d
+            out_path_context = os.path.join(contexts_dir, '{}_context.json'.format(app_name))
+            utils.make_sure_path_exists(contexts_dir)
+            print("dumping to {}".format(out_path_context))
+            with open(out_path_context, 'w') as outfile:
+                json.dump(context, outfile, indent=4, sort_keys=True)
+            context_files_struct['{}__{}'.format(tb, d)] = out_path_context
+    if run_verification:
+        od = collections.OrderedDict(sorted(context_files_struct.items(), reverse=True))
+        with ThreadPoolExecutor(max_workers) as executor:
+            for k, v in od.items():
+                print("TIMEBOUND__DEADLINE: {}\nFile: {}".format(k, v))
+                executor.submit(ssh_launch_json2mc, v, server, engine, labeling)
 
 
 def generate_plots(res, stages_keys, input_dir, num_v_set, benchmark):
@@ -296,19 +384,19 @@ def generate_plots(res, stages_keys, input_dir, num_v_set, benchmark):
                 title='average_GQ_{}'.format(input_dir.strip('/').split('/')[-1]),
                 x_axis_label="Num Vertices",
                 y_axis_label='Value ([0, 1])',
-                out_folder=input_dir)
+                out_folder=os.path.join(input_dir, IMGS_FOLDER))
 
     plot_figure(data=data_t_record_stages,
                 title='average_record_time_{}'.format(input_dir.strip('/').split('/')[-1]),
                 x_axis_label="Num Vertices",
                 y_axis_label='Time (ms)',
-                out_folder=input_dir)
+                out_folder=os.path.join(input_dir, IMGS_FOLDER))
 
     plot_figure(data=data_exec_times,
                 title='{}_execution_times_{}'.format(benchmark, input_dir.strip('/').split('/')[-1]),
                 x_axis_label="Num Vertices",
                 y_axis_label='Time (ms)',
-                out_folder=input_dir)
+                out_folder=os.path.join(input_dir, IMGS_FOLDER))
 
 def extract_essential_files(input_dir):
     analysis_files_dir = os.path.abspath(os.path.join(os.path.dirname(input_dir.strip(os.sep)),
@@ -373,8 +461,12 @@ def time_analysis(args):
     ta_master = ta_master_avg = None
     for x in JOB_STATS:
         exp_report2[x] = collections.defaultdict(list)
+    # check for different directory structure (spark-bench or spark-perf)
+    app_dirs_spark_bench = glob.glob(os.path.join(input_dir, 'app-*'))
+    app_dirs_spark_perf = glob.glob(os.path.join(input_dir, 'spark_perf_output_*', 'app-*'))
+    app_dirs = app_dirs_spark_bench if app_dirs_spark_bench else app_dirs_spark_perf
     # iterate over all the application directories included in input_dir
-    for d in glob.glob(os.path.join(input_dir, 'app-*')):
+    for d in app_dirs:
         '''
         if executors:  # if specified, modify max_executor in config.json  --> to be removed
             run_ta.modify_executors(d, executors)
@@ -394,7 +486,8 @@ def time_analysis(args):
         # save numV from configuration files of current directory
         benchmark = ta_job['benchmark_name']
         par_var_name = config.VAR_PAR_MAP[benchmark]['var_name']
-        num_v = str(ta_job[par_var_name][1])
+        par_var = ta_job[par_var_name][1] if isinstance(ta_job[par_var_name], list) else ta_job[par_var_name]
+        num_v = str(par_var)
         num_v_set.add(num_v)
         if not stages_sample:  # initialize all the data structures that will be used to store statistics
             for x in STAGES_STATS:
@@ -484,10 +577,13 @@ def time_analysis(args):
 def pro_runner(args):
     reprocess = args.reprocess
     exp_dir = args.exp_dir
-    for d in glob.glob(os.path.join(exp_dir, 'app-*')):
+    app_dirs_spark_bench = glob.glob(os.path.join(exp_dir, 'app-*'))
+    app_dirs_spark_perf = glob.glob(os.path.join(exp_dir, 'spark_perf_output_*', 'app-*'))
+    app_dirs = app_dirs_spark_bench if app_dirs_spark_bench else app_dirs_spark_perf
+    for d in app_dirs:
         profiling.main(input_dir=d, json_out_dir=d, reprocess=reprocess)
 
-
+'''
 def ssh_conn(args):
     """
     apparently is not possible to run json2mc in background with only paramiko
@@ -507,33 +603,45 @@ def ssh_conn(args):
     client.run('. {}/venv/bin/activate'.format(BASE_JSON2MC_PATH))
     status, std_out, std_err = client.run('cd {} &&  ./run_json2mc.py -T spark --db -c {} \&'.format(BASE_JSON2MC_PATH, destination_path))
     print('std_err: {}\nstd_out {}\nstatus {}'.format(std_err, std_out, status))
+'''
 
 
-def ssh_launch_json2mc(filepath):
+def ssh_launch_json2mc(filepath, server, engine, labeling):
     """
     simple method that uploads the file whose path is provided as argument filepath
     and remotely launches a verification task in background
     :param filepath: path of the .json which has to be uploaded on the server and provided as a parameter to json2mc.py
     """
-    exp_dir = 'd4s_27_11'
+    d_vert_server_hostname = D_VERT_SERVER_HOSTNAME[server]
+    base_json2mc_path = BASE_JSON2MC_PATH[server]
+    username = D_VERT_SERVER_USER[server]
+    exp_dir = EXP_DIR
     print('ssh_launch_json2mc({})'.format(filepath))
-    destination_path = os.path.join(BASE_JSON2MC_PATH, exp_dir, os.path.basename(filepath))
-    out_path = os.path.join(BASE_JSON2MC_PATH, exp_dir)
+    destination_path = os.path.join(base_json2mc_path, exp_dir, os.path.basename(filepath))
+    out_path = os.path.join(base_json2mc_path, exp_dir)
     # log_path = os.path.join(BASE_JSON2MC_PATH, 'logs', '{}.log'.format(os.path.splitext(os.path.basename(filepath))[0]))
-    print('connecting to {}'.format(D_VERT_SERVER_HOSTNAME))
-    rem = ParamikoMachine(host=D_VERT_SERVER_HOSTNAME, keyfile=config.PRIVATE_KEY_PATH, user='ubuntu')
-    print('uploading\n{}\nto\n{}:{}'.format(filepath, D_VERT_SERVER_HOSTNAME, destination_path))
+    print('connecting to {}'.format(d_vert_server_hostname))
+    rem = ParamikoMachine(host=d_vert_server_hostname, keyfile=config.PRIVATE_KEY_PATH, user=username)
+    print('uploading\n{}\nto\n{}:{}'.format(filepath, d_vert_server_hostname, destination_path))
+    mkdir = rem['mkdir']
+    mkdir['-p', os.path.join(base_json2mc_path, exp_dir)]
+    rem.env.path.insert(0, ['/home/fmbiased/DICE/Francesco/zot/bin:/home/fmbiased/DICE/Francesco/z3/bin:/home/fmbiased/uppaal64-4.1.19/bin-Linux'])
     rem.upload(filepath, destination_path)
-    with rem.cwd(BASE_JSON2MC_PATH):
+    with rem.cwd(base_json2mc_path):
         activate_venv = rem['./activate_venv.sh']
         run_json2mc = rem['./run_json2mc.py']
         print('activating venv...')
         activate_venv()
         print('launching json2mc...')
         # run_json2mc['-T', 'spark', '--db', '-c', destination_path, '-o', out_path] & FG
-        f = run_json2mc['-T', 'spark', '--db', '-c', destination_path, '-o', out_path] & BG
+        sleep(random.uniform(0, 3))
+        if labeling:  # TODO improve this
+            f = run_json2mc['-T', 'spark', '-e', engine, '--db', '-l', '-c', destination_path, '-o', out_path] & BG
+        else:
+            f = run_json2mc['-T', 'spark', '-e', engine, '--db', '-c', destination_path, '-o', out_path] & BG
         #f = (run_json2mc['-T', 'spark', '--db', '-c', destination_path] > 'pine.log')() & BG
-        sleep(3)
+        print('launched {}'.format(f))
+        sleep(1)
         f.wait()
         if f.ready():
             print('Command exited with return_code {}\nSTDOUT:{}\nSTDERR:{}'.format(f.returncode, f.stdout, f.stderr))
@@ -554,6 +662,7 @@ if __name__ == "__main__":
     parser_pro = subparsers.add_parser('pro', help='launch profiling on selected folders')
     parser_ta = subparsers.add_parser('ta', help='launch time_analysis on selected_folder')
     parser_gen = subparsers.add_parser('gen', help='generate json file for formal analysis')
+    parser_ver = subparsers.add_parser('ver', help='directly run verification given a json file and some settings')
 
     parser_pro.add_argument("exp_dir", help="directory containing all the experiment files to be analyzed")
     parser_pro.add_argument("-r", "--reprocess", dest="reprocess", action="store_true",
@@ -570,11 +679,6 @@ if __name__ == "__main__":
     parser_ta.add_argument("-c", "--collect", dest="collect_all_ta", action="store_true",
                            help="collect some of the main important statistics in one json file "
                                 "[default: %(default)s]")
-    '''
-    parser_ta.add_argument("--executors", dest="executors", type=int,
-                           help="executors"
-                                "[default: %(default)s]")
-    '''
     parser_ta.add_argument("-e", "--extract-essentials", dest="extract_essentials", action="store_true",
                            help='extract essential files to carry on further analysis '
                                 '({})'.format(ESSENTIAL_FILES))
@@ -586,7 +690,6 @@ if __name__ == "__main__":
     parser_gen.add_argument("-c", "--num-cores", dest="num_cores", type=int,
                            help="number of cores to be considered for the generated json context"
                                 "[default: %(default)s]")
-
     parser_gen.add_argument("-t", "--num-tasks", dest="num_tasks", type=int,
                            help="number of tasks for each stage"
                                 "[default: %(default)s]")
@@ -596,14 +699,55 @@ if __name__ == "__main__":
     parser_gen.add_argument("--time-bound", dest="time_bound", type=int, nargs='+',
                             help="time bounds to be considered in json context generation"
                                  "[default: %(default)s]")
-
+    parser_gen.add_argument("-l", "--labeling", dest="labeling", action="store_true", default=False,
+                            help="activates the labeling feature")
     parser_gen.add_argument("-v", "--verify", dest="verify", action="store_true",
                             help="launches verification task of the generated file "
                                  "on a remote server ({})".format(D_VERT_SERVER_HOSTNAME))
+    parser_gen.add_argument('-s', '--server', default='azure',
+                            choices=['azure', 'fm_biased'],
+                            help='the server where to run verification')
+    parser_gen.add_argument('-e', '--engine', default='zot',
+                            choices=['zot', 'uppaal'],
+                            help='the verification engine to be used')
+    parser_gen.add_argument("-w", "--workers", dest="max_workers", type=int, default=MAX_WORKERS,
+                            help="maximum number of verification tasks to be launched"
+                                 "[default: %(default)s]")
+
+
+    parser_ver.add_argument("-j", "--json", help="JSON file to be used for direct verification")
+    parser_ver.add_argument("-c", "--num-cores", dest="num_cores", type=int,
+                            help="number of cores to be considered for the generated json context"
+                                 "[default: %(default)s]")
+    parser_ver.add_argument("-t", "--num-tasks", dest="num_tasks", type=int,
+                            help="number of tasks for each stage"
+                                 "[default: %(default)s]")
+    parser_ver.add_argument("-d", "--deadlines", dest="deadlines", type=int, nargs='+',
+                            help="deadlines to be considered in json context generation"
+                                 "[default: %(default)s]")
+    parser_ver.add_argument("--time-bound", dest="time_bound", type=int, nargs='+',
+                            help="time bounds to be considered in json context generation"
+                                 "[default: %(default)s]")
+    parser_ver.add_argument("-l", "--labeling", dest="labeling", action="store_true", default=False,
+                            help="activates the labeling feature")
+    parser_ver.add_argument("-v", "--verify", dest="verify", action="store_true",
+                            help="launches verification task of the generated file "
+                                 "on a remote server ({})".format(D_VERT_SERVER_HOSTNAME))
+    parser_ver.add_argument('-s', '--server', default='azure',
+                            choices=['azure', 'fm_biased'],
+                            help='the server where to run verification')
+    parser_ver.add_argument('-e', '--engine', default='zot',
+                            choices=['zot', 'uppaal'],
+                            help='the verification engine to be used')
+    parser_ver.add_argument("-w", "--workers", dest="max_workers", type=int, default=MAX_WORKERS,
+                            help="maximum number of verification tasks to be launched"
+                                 "[default: %(default)s]")
 
     parser_pro.set_defaults(func=pro_runner)
     parser_ta.set_defaults(func=time_analysis)
     parser_gen.set_defaults(func=generate_spark_context)
+    parser_ver.set_defaults(func=launch_verification)
+
     args = parser.parse_args()
 
     try:
