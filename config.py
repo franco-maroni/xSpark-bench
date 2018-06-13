@@ -167,11 +167,12 @@ PREV_SCALE_FACTOR = 0
 """*Important Settings* if it is equals to SCALE_FACTOR no need to generate new data on HDFS"""
 BENCH_NUM_TRIALS = 1
 
+# TODO: remove dependency on BENCHMARK_PERF and BENCHMARK_BENCH variables
 BENCHMARK_PERF = [
     # "scala-agg-by-key",
     # "scala-agg-by-key-int",
     # "scala-agg-by-key-naive",
-     "scala-sort-by-key"#,
+    # "scala-sort-by-key",
     # "scala-sort-by-key-int",
     # "scala-count",
     # "scala-count-w-fltr",
@@ -179,7 +180,7 @@ BENCHMARK_PERF = [
 """Spark-perf benchmark to execute"""
 
 BENCHMARK_BENCH = [
-    # "PageRank",
+     "PageRank",
     # "DecisionTree",
     # "KMeans",
     # "SVM"

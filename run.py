@@ -158,7 +158,6 @@ def common_setup(ssh_client):
         #                remotepath="/usr/local/spark/conf/TestRunner__count-with-filter.json")
 
 
-
     if PROVIDER == "AWS_SPOT":
         ssh_client.run("echo 'export JAVA_HOME=/usr/lib/jvm/java-8-oracle' >> $HOME/.bashrc")
         ssh_client.run("echo 'export HADOOP_INSTALL=/usr/local/lib/hadoop-2.7.2' >> $HOME/.bashrc")
@@ -295,7 +294,6 @@ def setup_slave(node, master_ip, count):
             'export SPARK_HOME="{s}" && sudo {s}sbin/start-slave.sh {0}:7077 -h {1}  --port 9999 -c {2}'.format(
 
             master_ip, slave_ip, CORE_VM, s=SPARK_HOME))
-
         # REAL CPU LOG
         log_cpu_command = 'screen -d -m -S "{0}" bash -c "sar -u 1 > sar-{1}.log"'.format(
             slave_ip, slave_ip)
@@ -315,8 +313,8 @@ def setup_master(node, slaves_ip, hdfs_master):
         benchmark = cfg['main']['benchmark'] if 'main' in cfg and 'benchmark' in cfg['main'] else ''
         cfg[current_cluster] = {}
         # TODO check if needed
-        # input_record = cfg['pagerank']['num_v'] if 'pagerank' in cfg and 'num_v' in cfg['pagerank'] else INPUT_RECORD
-        # print("input_record: {}".format(input_record))
+        input_record = cfg['pagerank']['num_v'] if 'pagerank' in cfg and 'num_v' in cfg['pagerank'] else INPUT_RECORD
+        print("input_record: {}".format(input_record))
 
         print("Setup Master: PublicIp=" + node.public_ips[0] + " PrivateIp=" + node.private_ips[0])
         master_private_ip = get_ip(node)
@@ -398,14 +396,18 @@ def setup_master(node, slaves_ip, hdfs_master):
 
     if current_cluster == 'spark':
 
+        # TODO: check this!!
+        scale_factor = SCALE_FACTOR
+        num_task = NUM_TASK
+
         if benchmark == 'sort_by_key':
             BENCH_CONF['scala-sort-by-key']['ScaleFactor'] = literal_eval(cfg['sort_by_key']['scale_factor'])[1]
             print('setting ScaleFactor as {}'.format(BENCH_CONF['scala-sort-by-key']['ScaleFactor']))
             BENCH_CONF['scala-sort-by-key']['num-partitions'] = cfg['sort_by_key']['num_partitions']
             print('setting num-partitions as {}'.format(BENCH_CONF['scala-sort-by-key']['num-partitions']))
-            SCALE_FACTOR = BENCH_CONF[BENCHMARK_PERF[0]]["ScaleFactor"]
-            INPUT_RECORD = 200 * 1000 * 1000 * SCALE_FACTOR
-            NUM_TASK = SCALE_FACTOR
+            scale_factor = BENCH_CONF[BENCHMARK_PERF[0]]["ScaleFactor"]
+            input_record = 200 * 1000 * 1000 * scale_factor
+            num_task = scale_factor
 
         # OFF HEAP
         ssh_client.run(
@@ -498,10 +500,10 @@ def setup_master(node, slaves_ip, hdfs_master):
 
         ssh_client.run(
             "sed -i '54s{.*{spark.control.inputrecord " + str(
-                INPUT_RECORD) + "{' " + SPARK_HOME + "conf/spark-defaults.conf")
+                input_record) + "{' " + SPARK_HOME + "conf/spark-defaults.conf")
         ssh_client.run(
             "sed -i '55s{.*{spark.control.numtask " + str(
-                NUM_TASK) + "{' " + SPARK_HOME + "conf/spark-defaults.conf")
+                num_task) + "{' " + SPARK_HOME + "conf/spark-defaults.conf")
 
         ssh_client.run("""sed -i '3s{.*{master=""" + master_private_ip +
                        """{' ./spark-bench/conf/env.sh""")
@@ -517,7 +519,7 @@ def setup_master(node, slaves_ip, hdfs_master):
 
         # CHANGE SCALE FACTOR LINE 127
         ssh_client.run(
-            "sed -i '127s{.*{SCALE_FACTOR = " + str(SCALE_FACTOR) + "{' ./spark-perf/config/config.py")
+            "sed -i '127s{.*{SCALE_FACTOR = " + str(scale_factor) + "{' ./spark-perf/config/config.py")
 
         # NO PROMPT
         ssh_client.run("sed -i '103s{.*{PROMPT_FOR_DELETES = False{' ./spark-perf/config/config.py")
