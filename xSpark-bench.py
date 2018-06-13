@@ -241,7 +241,7 @@ def main():
     parser_launch_exp.add_argument('-r', '--num-runs', default=1, type=int, dest='num_runs',
                                    help='Number of runs for each configuration')
     parser_launch_exp.add_argument('-p', '--num-partitions', required=True, type=int, dest='num_partitions',
-                                   help='Number of partitions for each task')
+                                   help='Number of partitions for each stage')
 
     parser_launch_exp.add_argument("-P", "--profile", dest="profile", action="store_true",
                                    help="perform log profiling at the end of experiments"
