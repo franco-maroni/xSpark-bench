@@ -847,7 +847,7 @@ def run_benchmark(nodes):
             app_log = between(runout, "2>> ", ".err")
             logfolder = "/home/ubuntu/" + "/".join(app_log.split("/")[:-1])
             print(logfolder)
-            output_folder = logfolder[1:]
+            out_folder_exp_set = os.path.join(logfolder[1:], cfg['main']['exp_set_name'])
 
         for bench in BENCHMARK_BENCH:
 
@@ -870,18 +870,18 @@ def run_benchmark(nodes):
             ssh_client.run(
                 'eval `ssh-agent -s` && ssh-add ' + "$HOME/" + PRIVATE_KEY_NAME + ' && export SPARK_HOME="' + SPARK_HOME + '" && ./spark-bench/' + bench + '/bin/run.sh')
             logfolder = "/home/ubuntu/spark-bench/num"
-            output_folder = "home/ubuntu/spark-bench/num/"
+            out_folder_exp_set = os.path.join('home', 'ubuntu', 'spark-bench', 'num', cfg['main']['exp_set_name'])
 
-        # RODO: DOWNLOAD LOGS
-        output_folder = log.download(logfolder, [i for i in nodes[:end_index]], master_ip,
-                                     output_folder, CONFIG_DICT)
+        # TODO: DOWNLOAD LOGS
+        out_folder_single_exp = log.download(logfolder, [i for i in nodes[:end_index]], master_ip,
+                                             out_folder_exp_set, CONFIG_DICT)
 
-        write_config(output_folder)
-        print("Saving output folder {}".format(os.path.abspath(output_folder)))
-        cfg['out_folders']['output_folder_'+str(len(cfg['out_folders']))] = os.path.abspath(output_folder)
+        write_config(out_folder_single_exp)
+        print("Saving output folder {}".format(os.path.abspath(out_folder_single_exp)))
+        cfg['out_folders']['output_folder_'+str(len(cfg['out_folders']))] = os.path.abspath(out_folder_single_exp)
         # Saving cfg on project home directory and output folder
         write_cfg(cfg)
-        write_cfg(cfg, output_folder)
+        write_cfg(cfg, out_folder_single_exp)
 
         # PLOT LOGS
 #        plot.plot(output_folder + "/")

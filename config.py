@@ -124,8 +124,8 @@ if OFF_HEAP:
 OFF_HEAP_BYTES = 30720000000
 
 # Core Config
-CORE_VM = 10       # max 16
-CORE_HT_VM = 10     # max 16
+CORE_VM = 8       # max 16
+CORE_HT_VM = 8     # max 16
 # CORE_HT_VM = 2
 # CORE_VM = 2
 DISABLE_HT = 0

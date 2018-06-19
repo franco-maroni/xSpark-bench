@@ -11,7 +11,6 @@ from colors import header, okblue, okgreen, warning, underline, bold, fail
 import util.utils as utils
 
 from factory_methods import BenchInstanceFactory
-import argcomplete
 
 libcloud.common.base.RETRY_FAILED_HTTP_REQUESTS = True
 
@@ -156,10 +155,12 @@ def launch_exp(args):
     num_run = args.num_runs
     max_executors = args.max_executors
     num_partitions = args.num_partitions
+    exp_set_name = args.exp_set_name
     for v in var_par:
         with utils.open_cfg(mode='w') as cfg:
             cfg['main'] = {}
             cfg['main']['benchmark'] = bench
+            cfg['main']['exp_set_name'] = "{}_p{}_{}_r{}".format(bench, num_partitions, exp_set_name, num_run)
             cfg[bench] = {}
             cfg[bench][VAR_PAR_MAP[bench]['var_name']] = '({}, {})'.format(VAR_PAR_MAP[bench]['default'][0], v)
             cfg[bench]['num_partitions'] = str(num_partitions)
@@ -249,6 +250,10 @@ def main():
     parser_launch_exp.add_argument("-T", "--time_analysis", dest="time_analysis", action="store_true",
                                    help="perform time analysis at the end of experiments"
                                         "[default: %(default)s]")
+    parser_launch_exp.add_argument("--name", dest="exp_set_name", default='',
+                                   help="name of the set of experiments"
+                                        "(location where all the results will be saved)"
+                                        "[default: %(default)s]")
 
     parser_log_profiling.add_argument("-l", "--local", dest="local", action="store_true",
                                       help="use default local output folders"
@@ -280,7 +285,6 @@ def main():
     parser_time_analysis.set_defaults(func=time_analysis)
     parser_check_cluster.set_defaults(func=check_clusters)
 
-    argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
     try:
