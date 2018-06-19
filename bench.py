@@ -46,9 +46,12 @@ class BenchInstance(object):
         with utils.open_cfg(mode='w') as cfg:
             cfg['out_folders'] = {}
             cfg['main']['delete_hdfs'] = 'true'
+            exp_set_name = cfg['main']['exp_set_name']
+            cur_var_value = cfg['main']['cur_var_value']
         for i in range(num_run):
             if self.cluster_id == CLUSTER_MAP['spark']:
-                print(bold('Experiment ({}/{})'.format(i + 1, num_run)))
+                print(bold('[{} - {}] Experiment ({}/{})'.format(exp_set_name, cur_var_value,
+                                                                i + 1, num_run)))
             try:
                 self.retrieve_nodes()
                 x_run.run_benchmark(self.nodes)
