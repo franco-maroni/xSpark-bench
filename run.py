@@ -15,7 +15,7 @@ from config import UPDATE_SPARK_DOCKER, DELETE_HDFS, SPARK_HOME, KILL_JAVA, SYNC
     UPDATE_SPARK, \
     DISABLE_HT, ENABLE_EXTERNAL_SHUFFLE, OFF_HEAP, OFF_HEAP_BYTES, K, T_SAMPLE, TI, CORE_QUANTUM, \
     CORE_MIN, CPU_PERIOD, \
-    CORE_VM, UPDATE_SPARK_MASTER, DEADLINE, MAX_EXECUTOR, ALPHA, BETA, OVER_SCALE, LOCALITY_WAIT, \
+    UPDATE_SPARK_MASTER, DEADLINE, MAX_EXECUTOR, ALPHA, BETA, OVER_SCALE, LOCALITY_WAIT, \
     LOCALITY_WAIT_NODE, CPU_TASK, \
     LOCALITY_WAIT_PROCESS, LOCALITY_WAIT_RACK, INPUT_RECORD, NUM_TASK, BENCH_NUM_TRIALS, \
     SCALE_FACTOR, RAM_EXEC, \
@@ -225,6 +225,7 @@ def setup_slave(node, master_ip, count):
     """
     cfg = get_cfg()
     current_cluster = cfg['main']['current_cluster']
+    core_vm = cfg['main']['core_vm']
 
     ssh_client = sshclient_from_node(node, ssh_key_file=PRIVATE_KEY_PATH, user_name='ubuntu')
 
@@ -293,7 +294,7 @@ def setup_slave(node, master_ip, count):
             # 'export SPARK_HOME="{s}" && {s}sbin/start-slave.sh {0}:7077 -h {1}  --port 9999 -c {2}'.format(
             'export SPARK_HOME="{s}" && sudo {s}sbin/start-slave.sh {0}:7077 -h {1}  --port 9999 -c {2}'.format(
 
-            master_ip, slave_ip, CORE_VM, s=SPARK_HOME))
+            master_ip, slave_ip, core_vm, s=SPARK_HOME))
         # REAL CPU LOG
         log_cpu_command = 'screen -d -m -S "{0}" bash -c "sar -u 1 > sar-{1}.log"'.format(
             slave_ip, slave_ip)
@@ -312,6 +313,7 @@ def setup_master(node, slaves_ip, hdfs_master):
         current_cluster = cfg['main']['current_cluster']
         benchmark = cfg['main']['benchmark'] if 'main' in cfg and 'benchmark' in cfg['main'] else ''
         cfg[current_cluster] = {}
+        core_vm = cfg['main']['core_vm']
         # TODO check if needed
         input_record = cfg['pagerank']['num_v'] if 'pagerank' in cfg and 'num_v' in cfg['pagerank'] else INPUT_RECORD
         print("input_record: {}".format(input_record))
@@ -428,7 +430,7 @@ def setup_master(node, slaves_ip, hdfs_master):
 
         # CORE FOR VM LINE 40
         ssh_client.run("sed -i '40s{.*{spark.control.coreforvm " + str(
-            CORE_VM) + "{' " + SPARK_HOME + "conf/spark-defaults.conf")
+            core_vm) + "{' " + SPARK_HOME + "conf/spark-defaults.conf")
 
         # ALPHA LINE 36
         ssh_client.run("sed -i '36s{.*{spark.control.alpha " + str(

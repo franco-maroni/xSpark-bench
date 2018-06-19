@@ -14,7 +14,7 @@ from datetime import datetime as dt
 from datetime import timedelta
 
 from config import PRIVATE_KEY_PATH, PROVIDER
-from util.utils import timing, string_to_datetime
+from util.utils import timing, string_to_datetime, get_cfg
 from util.ssh_client import sshclient_from_node
 
 import run
@@ -36,6 +36,7 @@ def download_master(node, output_folder, log_folder, config):
     # get the latest app id and download all the files in the folder having that name.
     latest_app_id = max(files_list)
     download_folder = os.path.join(output_folder, latest_app_id)
+    cfg = get_cfg()
     for file in files_list:
         print("BENCHMARK: " + file)
         print("LOG FOLDER: " + log_folder)
@@ -52,7 +53,7 @@ def download_master(node, output_folder, log_folder, config):
         output_bz = input_file + ".bz"
         print("Bzipping event log...")
         ssh_client.run("pbzip2 -9 -p" + str(
-            config["Control"]["CoreVM"]) + " -c " + input_file + " > " + output_bz)
+            cfg['main']['core_vm']) + " -c " + input_file + " > " + output_bz)
         ssh_client.get(remotepath=output_bz, localpath=os.path.join(download_folder, file + ".bz"))
     for file in ssh_client.listdir(log_folder):
         if file != 'old':
@@ -225,6 +226,7 @@ def load_worker_data(worker_log, cpu_log, config):
     print(worker_log)
     print(cpu_log)
     worker_dict = {}
+    cfg = get_cfg()
     with open(worker_log) as wlog:
         app_id = ""
         worker_dict["cpu_real"] = []
@@ -280,10 +282,10 @@ def load_worker_data(worker_log, cpu_log, config):
                     dt.strptime(line[0], '%I:%M:%S %p').replace(year=2016))
                 if config["Aws"]["HyperThreading"]:
                     cpu_real = float(
-                        '{0:.2f}'.format((float(line[2]) * config["Control"]["CoreVM"] * 2) / 100))
+                        '{0:.2f}'.format((float(line[2]) * cfg['main']['core_vm'] * 2) / 100))
                 else:
                     cpu_real = float(
-                        '{0:.2f}'.format((float(line[2]) * config["Control"]["CoreVM"]) / 100))
+                        '{0:.2f}'.format((float(line[2]) * cfg['main']['core_vm']) / 100))
                 worker_dict["cpu_real"].append(cpu_real)
     for app_id in list(worker_dict):
         print(app_id)

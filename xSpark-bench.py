@@ -156,16 +156,19 @@ def launch_exp(args):
     max_executors = args.max_executors
     num_partitions = args.num_partitions
     exp_set_name = args.exp_set_name
+    core_vm = args.core_vm
     for v in var_par:
         with utils.open_cfg(mode='w') as cfg:
             cfg['main'] = {}
             cfg['main']['benchmark'] = bench
+            cfg['main']['core_vm'] = str(core_vm)
             cfg['main']['exp_set_name'] = "{}_p{}_{}_r{}".format(bench, num_partitions, exp_set_name, num_run)
+            cfg['main']['cur_var_value'] = str(v)
             cfg[bench] = {}
             cfg[bench][VAR_PAR_MAP[bench]['var_name']] = '({}, {})'.format(VAR_PAR_MAP[bench]['default'][0], v)
             cfg[bench]['num_partitions'] = str(num_partitions)
             if max_executors:
-                cfg['main']['max_executors'] = max_executors
+                cfg['main']['max_executors'] = str(max_executors)
         print(bold('Launch {} Experiments for benchmark {} on cluster {} with {}={}...'.format(num_run, bench,
                                                                                                cluster_id,
                                                                                                VAR_PAR_MAP[bench][
@@ -229,6 +232,8 @@ def main():
 
     parser_terminate.add_argument('cluster', choices=['hdfs', 'spark', 'all', 'generic'], help='The specified cluster')
 
+    parser_launch_exp.add_argument('-c', '--core-vm', required=True, type=int, dest='core_vm',
+                                   help='Number of cores to be user for each VM')
     parser_launch_exp.add_argument('-e', '--executors', default=None, type=int, dest='max_executors',
                                    help='Maximum number of executors to be used in the experiments. '
                                         'If None, the number of executor will be equal to (number of Spark nodes - 1) '
@@ -243,17 +248,17 @@ def main():
                                    help='Number of runs for each configuration')
     parser_launch_exp.add_argument('-p', '--num-partitions', required=True, type=int, dest='num_partitions',
                                    help='Number of partitions for each stage')
-
     parser_launch_exp.add_argument("-P", "--profile", dest="profile", action="store_true",
                                    help="perform log profiling at the end of experiments"
                                         "[default: %(default)s]")
     parser_launch_exp.add_argument("-T", "--time_analysis", dest="time_analysis", action="store_true",
                                    help="perform time analysis at the end of experiments"
                                         "[default: %(default)s]")
-    parser_launch_exp.add_argument("--name", dest="exp_set_name", default='',
+    parser_launch_exp.add_argument("--name", dest="exp_set_name", default='default',
                                    help="name of the set of experiments"
                                         "(location where all the results will be saved)"
                                         "[default: %(default)s]")
+
 
     parser_log_profiling.add_argument("-l", "--local", dest="local", action="store_true",
                                       help="use default local output folders"
