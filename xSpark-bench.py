@@ -99,6 +99,7 @@ def run_check_cluster(cluster):
     bench_instance = BenchInstanceFactory.get_bench_instance(PROVIDER, cluster_id)
     print(bench_instance.retrieve_nodes())
     print([(x.name, x.state) for x in bench_instance.nodes])
+    return bench_instance.nodes
 
 
 def setup(args):
@@ -155,30 +156,35 @@ def launch_exp(args):
     num_run = args.num_runs
     max_executors = args.max_executors
     num_partitions = args.num_partitions
-    exp_set_name = args.exp_set_name
+    exp_set_name = args.exp_set_name + '_' if args.exp_set_name else ''
     core_vm = args.core_vm
-    for v in var_par:
-        with utils.open_cfg(mode='w') as cfg:
-            cfg['main'] = {}
-            cfg['main']['benchmark'] = bench
-            cfg['main']['core_vm'] = str(core_vm)
-            cfg['main']['exp_set_name'] = "{}_p{}_{}_r{}".format(bench, num_partitions, exp_set_name, num_run)
-            cfg['main']['cur_var_value'] = str(v)
-            cfg[bench] = {}
-            cfg[bench][VAR_PAR_MAP[bench]['var_name']] = '({}, {})'.format(VAR_PAR_MAP[bench]['default'][0], v)
-            cfg[bench]['num_partitions'] = str(num_partitions)
-            if max_executors:
-                cfg['main']['max_executors'] = str(max_executors)
-        print(bold('Launch {} Experiments for benchmark {} on cluster {} with {}={}...'.format(num_run, bench,
-                                                                                               cluster_id,
-                                                                                               VAR_PAR_MAP[bench][
-                                                                                                   'var_name'], v)))
-        run_xspark(current_cluster='spark', num_instance=0, num_run=num_run,
-                   cluster_id=cluster_id, run=1, terminate=0, reboot=0)
-        if args.profile:
-            run_log_profiling(None)
-        if args.time_analysis:
-            run_time_analysis(None)
+    nodes = run_check_cluster('spark')
+    if not nodes:
+        print(fail('No nodes active in Spark cluster. Abort.'))
+    else:
+        for v in var_par:
+            with utils.open_cfg(mode='w') as cfg:
+                cfg['main'] = {}
+                cfg['main']['benchmark'] = bench
+                cfg['main']['core_vm'] = str(core_vm)
+                cfg['main']['exp_set_name'] = "{}{}_p{}_n{}_c{}_r{}".format(exp_set_name, bench, num_partitions,
+                                                                               len(nodes), core_vm, num_run)
+                cfg['main']['cur_var_value'] = str(v)
+                cfg[bench] = {}
+                cfg[bench][VAR_PAR_MAP[bench]['var_name']] = '({}, {})'.format(VAR_PAR_MAP[bench]['default'][0], v)
+                cfg[bench]['num_partitions'] = str(num_partitions)
+                if max_executors:
+                    cfg['main']['max_executors'] = str(max_executors)
+            print(bold('Launch {} Experiments for benchmark {} on cluster {} with {}={}...'.format(num_run, bench,
+                                                                                                   cluster_id,
+                                                                                                   VAR_PAR_MAP[bench][
+                                                                                                       'var_name'], v)))
+            run_xspark(current_cluster='spark', num_instance=0, num_run=num_run,
+                       cluster_id=cluster_id, run=1, terminate=0, reboot=0)
+            if args.profile:
+                run_log_profiling(None)
+            if args.time_analysis:
+                run_time_analysis(None)
 
 
 def log_profiling(args):
@@ -254,7 +260,7 @@ def main():
     parser_launch_exp.add_argument("-T", "--time_analysis", dest="time_analysis", action="store_true",
                                    help="perform time analysis at the end of experiments"
                                         "[default: %(default)s]")
-    parser_launch_exp.add_argument("--name", dest="exp_set_name", default='default',
+    parser_launch_exp.add_argument("--name", dest="exp_set_name", default=None,
                                    help="name of the set of experiments"
                                         "(location where all the results will be saved)"
                                         "[default: %(default)s]")

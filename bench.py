@@ -3,6 +3,7 @@ import time
 from drivers.ccglibcloud.ec2spot import set_spot_drivers
 from drivers.azurearm.driver import set_azurearm_driver
 from libcloud.compute.providers import get_driver
+import concurrent.futures
 
 import launch
 import run as x_run
@@ -14,6 +15,7 @@ from config import CONFIG_DICT, PROVIDER, REGION, TAG, NUM_INSTANCE, NUM_RUN, CL
 import util.utils as utils
 from spark_log_profiling import processing as profiling
 from spark_time_analysis import run as run_ta
+
 
 class BenchInstance(object):
     driver = None
@@ -46,12 +48,11 @@ class BenchInstance(object):
         with utils.open_cfg(mode='w') as cfg:
             cfg['out_folders'] = {}
             cfg['main']['delete_hdfs'] = 'true'
-            exp_set_name = cfg['main']['exp_set_name']
-            cur_var_value = cfg['main']['cur_var_value']
         for i in range(num_run):
             if self.cluster_id == CLUSTER_MAP['spark']:
-                print(bold('[{} - {}] Experiment ({}/{})'.format(exp_set_name, cur_var_value,
-                                                                i + 1, num_run)))
+                print(bold('[{} - {}] Experiment ({}/{})'.format(cfg['main']['exp_set_name'],
+                                                                 cfg['main']['cur_var_value'],
+                                                                 i + 1, num_run)))
             try:
                 self.retrieve_nodes()
                 x_run.run_benchmark(self.nodes)
@@ -73,13 +74,24 @@ class BenchInstance(object):
         ###################################################
         '''
         # Retrieve running nodes
-        self.retrieve_nodes()
-        # Destroy all nodes
-        print("Destroying nodes")
-        for node in self.nodes:
-            self.driver.destroy_node(node)
-            print("node {} destroyed".format(node.name))
-        print(okgreen("All nodes destroyed"))
+        if self.retrieve_nodes():
+            # Destroy all nodes
+            print("Destroying nodes")
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future_to_terminate = {executor.submit(self.driver.destroy_node, node) : node
+                                       for node in self.nodes}
+                for future in concurrent.futures.as_completed(future_to_terminate):
+                    node = future_to_terminate[future]
+                    try:
+                        outcome = future.result()
+                    except Exception as exc:
+                        print('{} generated an exception: {}'.format(node.name, exc))
+                    else:
+                        print("node {} destroyed ({})".format(node.name, outcome))
+                print(okgreen("All nodes terminated"))
+        else:
+            print(okgreen("No nodes are running in {} cluster".format(self.cluster_id)))
+
 
     def setup(self, num_instances, assume_yes):
         # TODO: instead of boolean, raise exception/terminate

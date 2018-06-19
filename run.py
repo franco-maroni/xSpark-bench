@@ -14,7 +14,7 @@ from config import PRIVATE_KEY_PATH, PRIVATE_KEY_NAME, TEMPORARY_STORAGE, PROVID
 from config import UPDATE_SPARK_DOCKER, DELETE_HDFS, SPARK_HOME, KILL_JAVA, SYNC_TIME, \
     UPDATE_SPARK, \
     DISABLE_HT, ENABLE_EXTERNAL_SHUFFLE, OFF_HEAP, OFF_HEAP_BYTES, K, T_SAMPLE, TI, CORE_QUANTUM, \
-    CORE_MIN, CPU_PERIOD, \
+    CORE_VM, CORE_MIN, CPU_PERIOD, \
     UPDATE_SPARK_MASTER, DEADLINE, MAX_EXECUTOR, ALPHA, BETA, OVER_SCALE, LOCALITY_WAIT, \
     LOCALITY_WAIT_NODE, CPU_TASK, \
     LOCALITY_WAIT_PROCESS, LOCALITY_WAIT_RACK, INPUT_RECORD, NUM_TASK, BENCH_NUM_TRIALS, \
@@ -225,7 +225,7 @@ def setup_slave(node, master_ip, count):
     """
     cfg = get_cfg()
     current_cluster = cfg['main']['current_cluster']
-    core_vm = cfg['main']['core_vm']
+    core_vm = cfg['main']['core_vm'] if 'core_vm' in cfg['main'] else CORE_VM
 
     ssh_client = sshclient_from_node(node, ssh_key_file=PRIVATE_KEY_PATH, user_name='ubuntu')
 
@@ -313,7 +313,7 @@ def setup_master(node, slaves_ip, hdfs_master):
         current_cluster = cfg['main']['current_cluster']
         benchmark = cfg['main']['benchmark'] if 'main' in cfg and 'benchmark' in cfg['main'] else ''
         cfg[current_cluster] = {}
-        core_vm = cfg['main']['core_vm']
+        core_vm = cfg['main']['core_vm'] if 'core_vm' in cfg['main'] else CORE_VM
         # TODO check if needed
         input_record = cfg['pagerank']['num_v'] if 'pagerank' in cfg and 'num_v' in cfg['pagerank'] else INPUT_RECORD
         print("input_record: {}".format(input_record))
