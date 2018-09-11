@@ -41,26 +41,52 @@ DEFAULT_NUM_CORES = 16
 IMGS_FOLDER = 'imgs'
 CONTEXTS_FOLDER = 'contexts'
 
-ESSENTIAL_FILES = ['app.json', 'app.dat', 'config.json', '*_time_analysis.json']
-JOB_STATS = ['actual_job_duration', 'total_ta_executor_stages', 'total_ta_master_stages', 'total_overhead_monocore',
-             'GQ_master'] + ['total_percentile' + str(p) for p in run_ta.PERCENTILES]
-STAGES_STATS = ['io_factor', 't_record_ta_master', 's_GQ_ta_master', 's_avg_duration_ta_master',
-                's_avg_duration_ta_executor', 't_avg_duration_ta_executor', 't_avg_duration_ta_master', 't_std_dev']
+ESSENTIAL_FILES = ['app.json',
+                   'app.dat',
+                   'config.json',
+                   '*_time_analysis.json',]
 
-JOB_STATS_BIG_JSON = ['actual_job_duration', 'num_v', 'num_cores', 'num_of_points']
-STAGES_STATS_BIG_JSON = ['add_to_end_taskset', 'actual_records_read', 's_GQ_ta_master', 's_GQ_ta_executor',
-                         't_record_ta_executor', 't_record_ta_master', 'io_factor', 't_task_ta_master',
-                         'task_durations']
+JOB_STATS = ['actual_job_duration',
+             'total_ta_executor_stages',
+             'total_ta_master_stages',
+             'total_overhead_monocore',
+             'GQ_master'] + ['total_percentile' + str(p) for p in run_ta.PERCENTILES]
+
+STAGES_STATS = ['io_factor',
+                's_avg_duration_ta_master',
+                's_avg_duration_ta_executor',
+                's_GQ_ta_master',
+                't_avg_duration_ta_executor',
+                't_avg_duration_ta_master',
+                't_mean_no_init',
+                't_record_ta_master',
+                't_std_dev',]
+
+JOB_STATS_BIG_JSON = ['actual_job_duration',
+                      'num_cores',
+                      'num_of_points',
+                      'num_v',]
+
+STAGES_STATS_BIG_JSON = ['add_to_end_taskset',
+                         'actual_records_read',
+                         'io_factor',
+                         's_GQ_ta_master',
+                         's_GQ_ta_executor',
+                         't_record_ta_executor',
+                         't_record_ta_master',
+                         't_task_ta_master',
+                         'task_durations',]
 
 SIMPLE_AVERAGE_STATS = ['avg_actual_job_duration',
                         'avg_total_ta_executor_stages',
                         'avg_total_ta_master_stages'] + ['avg_total_percentile' + str(p) for p in run_ta.PERCENTILES]
+
 COMBINED_STATS = ['avg_total_with_avg_gq_and_ta_master',
                   'avg_total_with_avg_gq_and_ta_executor',
                   'avg_total_with_avg_gq_and_ta_executor_plus_overhead',
                   'avg_total_with_local_gq_and_ta_master',
                   'avg_total_with_avg_gq_and_avg_t_record_master',
-                  'avg_total_with_avg_gq_and_local_t_record_master']
+                  'avg_total_with_avg_gq_and_local_t_record_master',]
 
 PLOT_EXEC_TIMES_STATS = SIMPLE_AVERAGE_STATS + COMBINED_STATS
 
@@ -114,7 +140,8 @@ def get_records_read(stages_struct, num_records, modify_stages_struct=False):
 def compute_t_task(stages_struct, num_records, num_cores, benchmark, num_task=None, t_task_policy=GQ_AVG_T_REC_AVG):
     """
     computes t_task for all the stages and modifies stages_struct to include it.
-    :param stages_struct: data structure containing the
+    :param benchmark: benchmark application name
+    :param stages_struct: data structure containing the stats regarding all the stages
     :param num_records: total number of input records
     :param num_cores: number of cores in the cluster
     :param num_task: number of tasks for each stages (currently uniform)
@@ -446,6 +473,11 @@ def get_empty_dict_of_dicts(keys):
 
 
 def time_analysis(args):
+    """
+    launch time_analysis on selected_folder
+
+    :param args: expected arguments: exp_dir, plot, reprocess, collect_all_ta, extract_essentials
+    """
     # get command line arguments
     input_dir = args.exp_dir
     plot = args.plot
