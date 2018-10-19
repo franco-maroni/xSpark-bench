@@ -27,14 +27,27 @@ import random
 
 MAX_WORKERS = 4
 
-D_VERT_SERVER_HOSTNAME = {'azure': '40.84.230.29',
-                          'fm_biased': 'planetlab1.elet.polimi.it'}
-D_VERT_SERVER_USER = {'azure': 'ubuntu',
-                      'fm_biased': 'fmbiased'}
-BASE_JSON2MC_PATH = {'azure': '/home/ubuntu/DICE-Verification/d-vert-server/d-vert-json2mc/',
-                     'fm_biased': '/home/fmbiased/DICE/Francesco/d4s/d-vert-server/d-vert-json2mc'}
+SERVERS = ['azure', 'fm_biased', 'marce_biased']
 
-EXP_DIR = os.path.join('d4s_fm2018', 'dbm')
+D_VERT_SERVER_HOSTNAME = {
+    'azure': '40.84.230.29',
+    'fm_biased': 'planetlab1.elet.polimi.it',
+    'marce_biased': 'planetlab1.elet.polimi.it',
+}
+D_VERT_SERVER_USER = {
+    'azure': 'ubuntu',
+    'fm_biased': 'fmbiased',
+    'marce_biased': 'bersani',
+}
+BASE_JSON2MC_PATH = {
+    'azure': '/home/ubuntu/DICE-Verification/d-vert-server/d-vert-json2mc/',
+    'fm_biased': '/home/fmbiased/DICE/Francesco/d4s/d-vert-server/d-vert-json2mc',
+    'marce_biased': '/home/fmbiased/DICE/Francesco/d4s/d-vert-server/d-vert-json2mc',
+}
+
+EXP_DIR = os.path.join('d4s_FAC')
+
+ABS_EXP_DIR = os.path.abspath(os.path.join(os.sep, 'home', 'bersani', 'FAC_2018_exp'))
 
 DEFAULT_NUM_RECORDS = 200000000
 DEFAULT_NUM_CORES = 16
@@ -647,16 +660,17 @@ def ssh_launch_json2mc(filepath, server, engine, labeling):
     d_vert_server_hostname = D_VERT_SERVER_HOSTNAME[server]
     base_json2mc_path = BASE_JSON2MC_PATH[server]
     username = D_VERT_SERVER_USER[server]
-    exp_dir = EXP_DIR
     print('ssh_launch_json2mc({})'.format(filepath))
-    destination_path = os.path.join(base_json2mc_path, exp_dir, os.path.basename(filepath))
-    out_path = os.path.join(base_json2mc_path, exp_dir)
+    # out_path = os.path.join(base_json2mc_path, EXP_DIR)
+    # destination_path = os.path.join(out_path, os.path.basename(filepath))
+    out_path = ABS_EXP_DIR
+    destination_path = os.path.join(out_path, os.path.basename(filepath))
     # log_path = os.path.join(BASE_JSON2MC_PATH, 'logs', '{}.log'.format(os.path.splitext(os.path.basename(filepath))[0]))
     print('connecting to {}'.format(d_vert_server_hostname))
     rem = ParamikoMachine(host=d_vert_server_hostname, keyfile=config.PRIVATE_KEY_PATH, user=username)
     print('uploading\n{}\nto\n{}:{}'.format(filepath, d_vert_server_hostname, destination_path))
     mkdir = rem['mkdir']
-    mkdir['-p', os.path.join(base_json2mc_path, exp_dir)]
+    mkdir['-p', out_path]
     rem.env.path.insert(0, ['/home/fmbiased/DICE/Francesco/zot/bin:/home/fmbiased/DICE/Francesco/z3/bin:/home/fmbiased/uppaal64-4.1.19/bin-Linux'])
     rem.upload(filepath, destination_path)
     with rem.cwd(base_json2mc_path):
@@ -736,8 +750,8 @@ if __name__ == "__main__":
     parser_gen.add_argument("-v", "--verify", dest="verify", action="store_true",
                             help="launches verification task of the generated file "
                                  "on a remote server ({})".format(D_VERT_SERVER_HOSTNAME))
-    parser_gen.add_argument('-s', '--server', default='azure',
-                            choices=['azure', 'fm_biased'],
+    parser_gen.add_argument('-s', '--server', default=SERVERS[0],
+                            choices=SERVERS,
                             help='the server where to run verification')
     parser_gen.add_argument('-e', '--engine', default='zot',
                             choices=['zot', 'uppaal'],
@@ -765,8 +779,8 @@ if __name__ == "__main__":
     parser_ver.add_argument("-v", "--verify", dest="verify", action="store_true",
                             help="launches verification task of the generated file "
                                  "on a remote server ({})".format(D_VERT_SERVER_HOSTNAME))
-    parser_ver.add_argument('-s', '--server', default='azure',
-                            choices=['azure', 'fm_biased'],
+    parser_ver.add_argument('-s', '--server', default=SERVERS[0],
+                            choices=SERVERS,
                             help='the server where to run verification')
     parser_ver.add_argument('-e', '--engine', default='zot',
                             choices=['zot', 'uppaal'],
