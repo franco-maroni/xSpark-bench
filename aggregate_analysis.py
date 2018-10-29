@@ -29,8 +29,14 @@ MAX_WORKERS = 4
 
 SERVERS = ['azure', 'fm_biased', 'marce_biased']
 
+DEFAULT_SEARCH_ORDER = {'uppaal': 'breadth-first',
+                        'zot': 'depth-first'}
+
+SEARCH_ORDERS = ['breadth-first', 'depth-first']
+
+
 D_VERT_SERVER_HOSTNAME = {
-    'azure': '40.84.230.29',
+    'azure': '70.37.53.100',
     'fm_biased': 'planetlab1.elet.polimi.it',
     'marce_biased': 'planetlab1.elet.polimi.it',
 }
@@ -47,7 +53,17 @@ BASE_JSON2MC_PATH = {
 
 EXP_DIR = os.path.join('d4s_FAC')
 
-ABS_EXP_DIR = os.path.abspath(os.path.join(os.sep, 'home', 'bersani', 'FAC_2018_exp'))
+ABS_EXP_DIR = {
+    'marce_biased': os.path.abspath(os.path.join(os.sep, 'home', 'bersani', 'FAC_2018_exp')),
+    'fm_biased': os.path.abspath(os.path.join(os.sep, 'home', 'bersani', 'FAC_2018_exp')),
+    'azure': os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'FAC_2018_exp'))
+}
+
+PATH = {
+    'fm_biased': ['/home/fmbiased/DICE/Francesco/zot/bin:/home/fmbiased/DICE/Francesco/z3/bin:/home/fmbiased/uppaal64-4.1.19/bin-Linux'],
+    'marce_biased': ['/home/fmbiased/DICE/Francesco/zot/bin:/home/fmbiased/DICE/Francesco/z3/bin:/home/fmbiased/uppaal64-4.1.19/bin-Linux'],
+    'azure': ['/usr/local/uppaal64-4.1.19/bin-Linux/'],
+}
 
 DEFAULT_NUM_RECORDS = 200000000
 DEFAULT_NUM_CORES = 16
@@ -265,6 +281,7 @@ def generate_spark_context(args):
     engine = args.engine
     max_workers = args.max_workers if args.max_workers else MAX_WORKERS
     labeling = args.labeling
+    search_order = args.search_order if args.search_order else DEFAULT_SEARCH_ORDER[engine]
     print('generate_spark_context for num_records: {}'.format(num_records))
     aggregated_stats_path = glob.glob(os.path.join(exp_dir, '{}_aggregated_stats.json'.format(analysis_id)))
     generic_stages_path = glob.glob(os.path.join(exp_dir, '{}_generic_stages.json'.format(analysis_id)))
@@ -297,7 +314,7 @@ def generate_spark_context(args):
         for d in deadlines:
             print('Generating JSON file for deadline {}, time_bound: {}'.format(d, tb))
             app_name = "{}_c{}_t{}_nr{}_tb{}_{}l_d{}" \
-                       "_tc_{}_n_rounds_{}_{}_{}".format(analysis_id,
+                       "_tc_{}_n_rounds_{}_{}_{}_{}".format(analysis_id,
                                                          num_cores,
                                                          num_tasks,
                                                          num_records,
@@ -309,6 +326,7 @@ def generate_spark_context(args):
                                                                         num_cores -
                                                                         num_tasks % num_cores),
                                                          "by1", t_task_policy,
+                                                         search_order,
                                                          "label" if labeling else "no_label")
             #        "exp_dir_acceleration_0_1000_c48_t40_no-l_d133000_tc_parametric_forall_nrounds_TEST",
             SPARK_CONTEXT = {
@@ -327,7 +345,8 @@ def generate_spark_context(args):
                 "max_time": d,
                 "tolerance": ta_cfg.TOLERANCE,
                 "stages": generic_stages_struct,
-                "labeling": True if labeling else False
+                "labeling": True if labeling else False,
+                "search_order": search_order,
             }
 
             utils.make_sure_path_exists(contexts_dir)
@@ -352,6 +371,7 @@ def launch_verification(args):
     engine = args.engine
     max_workers = args.max_workers if args.max_workers else MAX_WORKERS
     run_verification = args.verify
+    search_order = args.search_order if args.search_order else DEFAULT_SEARCH_ORDER[engine]
     with open(json_path) as cf:
         context = json.load(cf)
     deadlines = args.deadlines if args.deadlines else [context['deadline']]
@@ -663,22 +683,27 @@ def ssh_launch_json2mc(filepath, server, engine, labeling):
     print('ssh_launch_json2mc({})'.format(filepath))
     # out_path = os.path.join(base_json2mc_path, EXP_DIR)
     # destination_path = os.path.join(out_path, os.path.basename(filepath))
-    out_path = ABS_EXP_DIR
+    out_path = ABS_EXP_DIR[server]
     destination_path = os.path.join(out_path, os.path.basename(filepath))
     # log_path = os.path.join(BASE_JSON2MC_PATH, 'logs', '{}.log'.format(os.path.splitext(os.path.basename(filepath))[0]))
     print('connecting to {}'.format(d_vert_server_hostname))
     rem = ParamikoMachine(host=d_vert_server_hostname, keyfile=config.PRIVATE_KEY_PATH, user=username)
     print('uploading\n{}\nto\n{}:{}'.format(filepath, d_vert_server_hostname, destination_path))
     mkdir = rem['mkdir']
-    mkdir['-p', out_path]
-    rem.env.path.insert(0, ['/home/fmbiased/DICE/Francesco/zot/bin:/home/fmbiased/DICE/Francesco/z3/bin:/home/fmbiased/uppaal64-4.1.19/bin-Linux'])
+    mkdir['-p', out_path]()
+    rem.env.path.insert(0, PATH[server])
     rem.upload(filepath, destination_path)
     with rem.cwd(base_json2mc_path):
         activate_venv = rem['./activate_venv.sh']
         run_json2mc = rem['./run_json2mc.py']
+        # source = rem['source']
+        # workon = rem['workon']
+        # source['~/.bashrc']()
         print('activating venv...')
         activate_venv()
+        # workon['d-vert']()
         print('launching json2mc...')
+        print(' '.join(['./run_json2mc.py','-T', 'spark', '-e', engine, '--db', '-l', '-c', destination_path, '-o', out_path]))
         # run_json2mc['-T', 'spark', '--db', '-c', destination_path, '-o', out_path] & FG
         sleep(random.uniform(0, 3))
         if labeling:  # TODO improve this
@@ -759,7 +784,9 @@ if __name__ == "__main__":
     parser_gen.add_argument("-w", "--workers", dest="max_workers", type=int, default=MAX_WORKERS,
                             help="maximum number of verification tasks to be launched"
                                  "[default: %(default)s]")
-
+    parser_gen.add_argument('-o', '--search-order',
+                            choices=SEARCH_ORDERS,
+                            help='search order')
 
     parser_ver.add_argument("-j", "--json", help="JSON file to be used for direct verification")
     parser_ver.add_argument("-c", "--num-cores", dest="num_cores", type=int,
@@ -788,6 +815,10 @@ if __name__ == "__main__":
     parser_ver.add_argument("-w", "--workers", dest="max_workers", type=int, default=MAX_WORKERS,
                             help="maximum number of verification tasks to be launched"
                                  "[default: %(default)s]")
+    parser_ver.add_argument('-o', '--search-order',
+                            choices=SEARCH_ORDERS,
+                            help='search order')
+
 
     parser_pro.set_defaults(func=pro_runner)
     parser_ta.set_defaults(func=time_analysis)
