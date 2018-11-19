@@ -27,29 +27,66 @@ import random
 
 MAX_WORKERS = 4
 
-SERVERS = ['azure', 'fm_biased', 'marce_biased']
-
 DEFAULT_SEARCH_ORDER = {'uppaal': 'breadth-first',
                         'zot': 'depth-first'}
 
 SEARCH_ORDERS = ['breadth-first', 'depth-first']
 
+REMOTE_D_VERT_SERVERS = {
+    'azure': {
+        'hostname': '70.37.53.100',
+        'username': 'ubuntu',
+        'json2mc_path':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'DICE-Verification',
+                                                      'd-vert-server', 'd-vert-json2mc')),
+        'exp_dir':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'FAC_2018_exp')),
+        'env_path': [''],
+    },
+    'azure_fac18_0': {
+        'hostname': '13.66.3.15',
+        'username': 'ubuntu',
+        'json2mc_path':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'DICE-Verification',
+                                                      'd-vert-server', 'd-vert-json2mc')),
+        'exp_dir':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'FAC_2018_exp')),
+        'env_path': [''],
+    },
+    'azure_fac18_1': {
+        'hostname': '40.84.131.14',
+        'username': 'ubuntu',
+        'json2mc_path':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'DICE-Verification',
+                                                      'd-vert-server', 'd-vert-json2mc')),
+        'exp_dir':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'FAC_2018_exp')),
+        'env_path': [''],
+    },
+    'azure_fac18_2': {
+        'hostname': '40.84.130.94',
+        'username': 'ubuntu',
+        'json2mc_path':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'DICE-Verification',
+                                                      'd-vert-server', 'd-vert-json2mc')),
+        'exp_dir':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'FAC_2018_exp')),
+        'env_path': [''],
+    },
+    'fm_biased': {
+        'hostname': 'planetlab1.elet.polimi.it',
+        'username': 'fmbiased',
+        'json2mc_path': os.path.abspath(os.path.join(os.sep, 'home', 'fmbiased', 'DICE', 'Francesco', 'd4s',
+                                                     'd-vert-server', 'd-vert-json2mc')),
+        'exp_dir': os.path.abspath(os.path.join(os.sep, 'home', 'fmbiased', 'FAC_2018_exp')),
+        'env_path': ['/home/fmbiased/DICE/Francesco/zot/bin:/home/fmbiased/DICE/Francesco/z3/bin:'
+                     '/home/fmbiased/uppaal64-4.1.19/bin-Linux'],
+    },
+    'marce_biased': {
+        'hostname': 'planetlab1.elet.polimi.it',
+        'username': 'bersani',
+        'json2mc_path': os.path.abspath(os.path.join(os.sep, 'home', 'fmbiased', 'DICE', 'Francesco', 'd4s',
+                                                     'd-vert-server', 'd-vert-json2mc')),
+        'exp_dir': os.path.abspath(os.path.join(os.sep, 'home', 'bersani', 'FAC_2018_exp')),
+        'env_path': ['/home/fmbiased/DICE/Francesco/zot/bin:/home/fmbiased/DICE/Francesco/z3/bin:'
+                     '/home/fmbiased/uppaal64-4.1.19/bin-Linux'],
+    },
 
-D_VERT_SERVER_HOSTNAME = {
-    'azure': '70.37.53.100',
-    'fm_biased': 'planetlab1.elet.polimi.it',
-    'marce_biased': 'planetlab1.elet.polimi.it',
 }
-D_VERT_SERVER_USER = {
-    'azure': 'ubuntu',
-    'fm_biased': 'fmbiased',
-    'marce_biased': 'bersani',
-}
-BASE_JSON2MC_PATH = {
-    'azure': '/home/ubuntu/DICE-Verification/d-vert-server/d-vert-json2mc/',
-    'fm_biased': '/home/fmbiased/DICE/Francesco/d4s/d-vert-server/d-vert-json2mc',
-    'marce_biased': '/home/fmbiased/DICE/Francesco/d4s/d-vert-server/d-vert-json2mc',
-}
+
+SERVER_NAMES = list(REMOTE_D_VERT_SERVERS.keys())
 
 EXP_DIR = os.path.join('d4s_FAC')
 
@@ -130,6 +167,25 @@ NUM_RECORDS_FACTOR = {
     'kmeans': 2,
     'sort_by_key': 20000000
 }
+
+PERCENTAGES = [
+    # 0,
+    # # 1,
+    # # 3,
+    # 5,
+    # 10,
+    # # 15,
+    # 20,
+    # # -1,
+    # # -5,
+    -10,
+    -20,
+    ]
+
+
+def gen_perc(arg, coeff):
+    return int(arg + arg*coeff/100)
+
 
 def get_num_records(bench, param):
     return param * NUM_RECORDS_FACTOR[bench]
@@ -281,7 +337,10 @@ def generate_spark_context(args):
     engine = args.engine
     max_workers = args.max_workers if args.max_workers else MAX_WORKERS
     labeling = args.labeling
+    d_range = args.d_range
+    d_percentages = args.d_percentages
     search_order = args.search_order if args.search_order else DEFAULT_SEARCH_ORDER[engine]
+    plugin = args.plugin if args.plugin else ta_cfg.PLUGIN
     print('generate_spark_context for num_records: {}'.format(num_records))
     aggregated_stats_path = glob.glob(os.path.join(exp_dir, '{}_aggregated_stats.json'.format(analysis_id)))
     generic_stages_path = glob.glob(os.path.join(exp_dir, '{}_generic_stages.json'.format(analysis_id)))
@@ -305,12 +364,14 @@ def generate_spark_context(args):
 
     if not deadlines:
         deadlines = [int(selected_seq_duration)]
+    elif d_range:  # expects 3 values for deadlines
+        epsilon = (1, -1)[deadlines[2] < 0]  # allows for second term inclusion
+        deadlines = list(range(deadlines[0], deadlines[1] + epsilon, deadlines[2]))
+    elif d_percentages:
+        deadlines = [gen_perc(deadlines[0], y) for y in PERCENTAGES]
     contexts_dir = os.path.join(exp_dir, CONTEXTS_FOLDER)
     context_files_struct = {}
-    range_end = deadlines[0]
-    reverse_deadlines_list = list(reversed(range(range_end - 10, range_end, 1)))
     for tb in time_bound:
-     #   for d in reverse_deadlines_list:
         for d in deadlines:
             print('Generating JSON file for deadline {}, time_bound: {}'.format(d, tb))
             app_name = "{}_c{}_t{}_nr{}_tb{}_{}l_d{}" \
@@ -329,12 +390,13 @@ def generate_spark_context(args):
                                                          search_order,
                                                          "label" if labeling else "no_label")
             #        "exp_dir_acceleration_0_1000_c48_t40_no-l_d133000_tc_parametric_forall_nrounds_TEST",
+
             SPARK_CONTEXT = {
                 "app_name": app_name,
                 "app_type": benchmark,
                 "verification_params":
                     {
-                        "plugin": ta_cfg.PLUGIN,
+                        "plugin": plugin,
                         "time_bound": tb,
                         "parametric_tc": ta_cfg.PARAMETRIC_TC,
                         "no_loops": ta_cfg.NO_LOOPS
@@ -348,7 +410,6 @@ def generate_spark_context(args):
                 "labeling": True if labeling else False,
                 "search_order": search_order,
             }
-
             utils.make_sure_path_exists(contexts_dir)
             out_path_context = os.path.join(contexts_dir, '{}_context.json'.format(app_name))
             print("dumping to {}".format(out_path_context))
@@ -372,12 +433,19 @@ def launch_verification(args):
     max_workers = args.max_workers if args.max_workers else MAX_WORKERS
     run_verification = args.verify
     search_order = args.search_order if args.search_order else DEFAULT_SEARCH_ORDER[engine]
+    d_range = args.d_range
+    d_percentages = args.d_percentages
+    plugin = args.plugin if args.plugin else ta_cfg.PLUGIN
     with open(json_path) as cf:
         context = json.load(cf)
+    input_records = context['stages']['0']['records_read'] if 'records_read' in context['stages']['0'] \
+        else context['stages']['0']['recordsread']
     deadlines = args.deadlines if args.deadlines else [context['deadline']]
     print("DEADLINES: {}".format(deadlines))
     time_bound = args.time_bound if args.time_bound else [context['verification_params']['time_bound']]
     context['tot_cores'] = args.num_cores if args.num_cores else context['tot_cores']
+    context['search_order'] = search_order
+    context['verification_params']['plugin'] = plugin
     skipped_stages = []
     if tasks:
         for k,v in context["stages"].items():
@@ -392,15 +460,22 @@ def launch_verification(args):
         context["stages"].pop(s)
     contexts_dir = os.path.join(os.path.dirname(json_path), 'generated_contexts')
     context_files_struct = {}
-    range_end = deadlines[0]
-    reverse_deadlines_list = list(reversed(range(range_end - 10, range_end, 1)))
+    # range_end = deadlines[0]
+    # reverse_deadlines_list = list(reversed(range(range_end - 10, range_end, 1)))
+    if not deadlines:
+        deadlines = [int(selected_seq_duration)]
+    elif d_range:  # expects 3 values for deadlines
+        epsilon = (1, -1)[deadlines[2] < 0]  # allows for second term inclusion
+        deadlines = list(range(deadlines[0], deadlines[1] + epsilon, deadlines[2]))
+    elif d_percentages:
+        deadlines = [gen_perc(deadlines[0], y) for y in PERCENTAGES]
     for tb in time_bound:
         context['verification_params']['time_bound'] = tb
         #   for d in reverse_deadlines_list:
         for d in deadlines:
-            app_name = '{}_c{}_t{}_tb{}_d{}_{}'.format(context['app_type'], context['tot_cores'],
-                                                       tasks if tasks else 'default', tb, d,
-                                                       'label' if labeling else 'NO_label')
+            app_name = '{}_c{}_t{}_nr{}_tb{}_d{}_{}_{}'.format(context['app_type'], context['tot_cores'],
+                                                       tasks if tasks else 'default', input_records, tb, d,
+                                                       search_order,'label' if labeling else 'NO_label')
             context['app_name'] = app_name
             context['deadline'] = context['max_time'] = d
             out_path_context = os.path.join(contexts_dir, '{}_context.json'.format(app_name))
@@ -410,7 +485,7 @@ def launch_verification(args):
                 json.dump(context, outfile, indent=4, sort_keys=True)
             context_files_struct['{}__{}'.format(tb, d)] = out_path_context
     if run_verification:
-        od = collections.OrderedDict(sorted(context_files_struct.items(), reverse=True))
+        od = collections.OrderedDict(sorted(context_files_struct.items(), reverse=False))
         with ThreadPoolExecutor(max_workers) as executor:
             for k, v in od.items():
                 print("TIMEBOUND__DEADLINE: {}\nFile: {}".format(k, v))
@@ -677,21 +752,23 @@ def ssh_launch_json2mc(filepath, server, engine, labeling):
     and remotely launches a verification task in background
     :param filepath: path of the .json which has to be uploaded on the server and provided as a parameter to json2mc.py
     """
-    d_vert_server_hostname = D_VERT_SERVER_HOSTNAME[server]
-    base_json2mc_path = BASE_JSON2MC_PATH[server]
-    username = D_VERT_SERVER_USER[server]
+    d_vert_server_hostname = REMOTE_D_VERT_SERVERS[server]['hostname']
+    base_json2mc_path = REMOTE_D_VERT_SERVERS[server]['json2mc_path']
+    username = REMOTE_D_VERT_SERVERS[server]['username']
     print('ssh_launch_json2mc({})'.format(filepath))
     # out_path = os.path.join(base_json2mc_path, EXP_DIR)
     # destination_path = os.path.join(out_path, os.path.basename(filepath))
-    out_path = ABS_EXP_DIR[server]
+    out_path = REMOTE_D_VERT_SERVERS[server]['exp_dir']
     destination_path = os.path.join(out_path, os.path.basename(filepath))
     # log_path = os.path.join(BASE_JSON2MC_PATH, 'logs', '{}.log'.format(os.path.splitext(os.path.basename(filepath))[0]))
     print('connecting to {}'.format(d_vert_server_hostname))
     rem = ParamikoMachine(host=d_vert_server_hostname, keyfile=config.PRIVATE_KEY_PATH, user=username)
-    print('uploading\n{}\nto\n{}:{}'.format(filepath, d_vert_server_hostname, destination_path))
+    print("mkdir {}".format(out_path))
     mkdir = rem['mkdir']
     mkdir['-p', out_path]()
-    rem.env.path.insert(0, PATH[server])
+    print("adding {} to $PATH".format(REMOTE_D_VERT_SERVERS[server]['env_path']))
+    rem.env.path.insert(0, REMOTE_D_VERT_SERVERS[server]['env_path'])
+    print('uploading\n{}\nto\n{}:{}'.format(filepath, d_vert_server_hostname, destination_path))
     rem.upload(filepath, destination_path)
     with rem.cwd(base_json2mc_path):
         activate_venv = rem['./activate_venv.sh']
@@ -772,15 +849,24 @@ if __name__ == "__main__":
                                  "[default: %(default)s]")
     parser_gen.add_argument("-l", "--labeling", dest="labeling", action="store_true", default=False,
                             help="activates the labeling feature")
+    parser_gen.add_argument("--d-range", dest="d_range", action="store_true", default=False,
+                            help="Interpret deadline values as a range "
+                                 "(it expects 3 values, that will be fed to the range function)")
+    parser_gen.add_argument("--d-perc", dest="d_percentages", action="store_true", default=False,
+                            help="Generate deadlines that differ by a percentage from the provided value"
+                                 "(it expects 1 value)")
+
     parser_gen.add_argument("-v", "--verify", dest="verify", action="store_true",
                             help="launches verification task of the generated file "
-                                 "on a remote server ({})".format(D_VERT_SERVER_HOSTNAME))
-    parser_gen.add_argument('-s', '--server', default=SERVERS[0],
-                            choices=SERVERS,
+                                 "on a remote server ({})".format(SERVER_NAMES))
+    parser_gen.add_argument('-s', '--server', choices=SERVER_NAMES,
                             help='the server where to run verification')
     parser_gen.add_argument('-e', '--engine', default='zot',
                             choices=['zot', 'uppaal'],
                             help='the verification engine to be used')
+    parser_gen.add_argument('--plugin', default='ae2sbvzot',
+                            choices=['ae2sbvzot', 'ae2zot'],
+                            help='zot plugin to be used')
     parser_gen.add_argument("-w", "--workers", dest="max_workers", type=int, default=MAX_WORKERS,
                             help="maximum number of verification tasks to be launched"
                                  "[default: %(default)s]")
@@ -805,20 +891,27 @@ if __name__ == "__main__":
                             help="activates the labeling feature")
     parser_ver.add_argument("-v", "--verify", dest="verify", action="store_true",
                             help="launches verification task of the generated file "
-                                 "on a remote server ({})".format(D_VERT_SERVER_HOSTNAME))
-    parser_ver.add_argument('-s', '--server', default=SERVERS[0],
-                            choices=SERVERS,
+                                 "on a remote server ({})".format(SERVER_NAMES))
+    parser_ver.add_argument('-s', '--server', choices=SERVER_NAMES,
                             help='the server where to run verification')
     parser_ver.add_argument('-e', '--engine', default='zot',
                             choices=['zot', 'uppaal'],
                             help='the verification engine to be used')
+    parser_ver.add_argument('--plugin', default='ae2sbvzot',
+                            choices=['ae2sbvzot', 'ae2zot'],
+                            help='zot plugin to be used')
     parser_ver.add_argument("-w", "--workers", dest="max_workers", type=int, default=MAX_WORKERS,
                             help="maximum number of verification tasks to be launched"
                                  "[default: %(default)s]")
     parser_ver.add_argument('-o', '--search-order',
                             choices=SEARCH_ORDERS,
                             help='search order')
-
+    parser_ver.add_argument("--d-range", dest="d_range", action="store_true", default=False,
+                            help="Interpret deadline values as a range "
+                                 "(it expects 3 values, that will be fed to the range function)")
+    parser_ver.add_argument("--d-perc", dest="d_percentages", action="store_true", default=False,
+                            help="Generate deadlines that differ by a percentage from the provided value"
+                                 "(it expects 1 value)")
 
     parser_pro.set_defaults(func=pro_runner)
     parser_ta.set_defaults(func=time_analysis)

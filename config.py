@@ -410,7 +410,8 @@ SPARK_PERF_FOLDER = "spark-perf"
 CLUSTER_MAP = {
     'hdfs': 'CSPARKHDFS',
     'spark': 'CSPARKWORK',
-    'generic': 'ZOT'
+    'generic': 'ZOT',
+    'fac18': 'FAC18',
 }
 
 VAR_PAR_MAP = {

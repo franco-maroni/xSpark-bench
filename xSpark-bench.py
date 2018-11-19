@@ -14,6 +14,7 @@ from factory_methods import BenchInstanceFactory
 
 libcloud.common.base.RETRY_FAILED_HTTP_REQUESTS = True
 
+CLUSTER_NAMES = list(CLUSTER_MAP.keys()) + ['all']
 
 def run_xspark(current_cluster, num_instance=NUM_INSTANCE, num_run=NUM_RUN, cluster_id=CLUSTER_ID, terminate=TERMINATE,
                run=RUN, reboot=REBOOT, assume_yes=False):
@@ -54,7 +55,8 @@ def setup_cluster(cluster, num_instances, assume_yes):
     run_on_setup = {
         'spark': 0,
         'hdfs' : 1,
-        'generic': 0
+        'generic': 0,
+        'fac18': 0,
     }
     cluster_id = CLUSTER_MAP[cluster]
     print(bold('Setup {} with {} instances...'.format(cluster_id, num_instances)))
@@ -228,15 +230,15 @@ def main():
                                                          'into the client machine')
     '''
 
-    parser_setup.add_argument('cluster', choices=['hdfs', 'spark', 'all', 'generic'], help='The specified cluster')
+    parser_setup.add_argument('cluster', choices=CLUSTER_NAMES, help='The specified cluster')
     parser_setup.add_argument('-n', '--num-instances', type=int, default=5, dest='num_instances',
                               help='Number of instances to be created per cluster')
     parser_setup.add_argument('-y', '--yes', dest='assume_yes', action='store_true',
                               help='Assume yes to the confirmation queries')
 
-    parser_reboot.add_argument('cluster', choices=['hdfs', 'spark', 'all', 'generic'], help='The specified cluster')
+    parser_reboot.add_argument('cluster', choices=CLUSTER_NAMES, help='The specified cluster')
 
-    parser_terminate.add_argument('cluster', choices=['hdfs', 'spark', 'all', 'generic'], help='The specified cluster')
+    parser_terminate.add_argument('cluster', choices=CLUSTER_NAMES, help='The specified cluster')
 
     parser_launch_exp.add_argument('-c', '--core-vm', required=True, type=int, dest='core_vm',
                                    help='Number of cores to be user for each VM')
@@ -274,7 +276,7 @@ def main():
                                       help="input directory (where all the log files are located)"
                                            "[default: load from config file latest benchmark directory")
 
-    parser_check_cluster.add_argument('cluster', choices=['hdfs', 'spark', 'all', 'generic'], help='The specified cluster')
+    parser_check_cluster.add_argument('cluster', choices=CLUSTER_NAMES, help='The specified cluster')
 
     '''
     parser_profile.add_argument('exp_file_path', help='experiment file path')
