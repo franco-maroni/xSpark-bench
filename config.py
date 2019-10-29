@@ -412,6 +412,7 @@ CLUSTER_MAP = {
     'spark': 'CSPARKWORK',
     'generic': 'ZOT',
     'fac18': 'FAC18',
+    'fac19': 'FAC19',
 }
 
 VAR_PAR_MAP = {
@@ -426,5 +427,9 @@ VAR_PAR_MAP = {
     'sort_by_key': {
         'var_name': 'scale_factor',
         'default': (0, 15)
+    },
+    'louvain': {
+        'var_name': 'size',
+        'default': 16000000
     }
 }

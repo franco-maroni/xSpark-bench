@@ -38,31 +38,31 @@ REMOTE_D_VERT_SERVERS = {
         'username': 'ubuntu',
         'json2mc_path':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'DICE-Verification',
                                                       'd-vert-server', 'd-vert-json2mc')),
-        'exp_dir':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'FAC_2018_exp')),
+        'exp_dir':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'FAC_2019_exp')),
         'env_path': [''],
     },
     'azure_fac18_0': {
-        'hostname': '13.66.3.15',
+        'hostname': '104.215.95.166',
         'username': 'ubuntu',
         'json2mc_path':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'DICE-Verification',
                                                       'd-vert-server', 'd-vert-json2mc')),
-        'exp_dir':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'FAC_2018_exp')),
+        'exp_dir':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'FAC_2019_exp')),
         'env_path': [''],
     },
-    'azure_fac18_1': {
-        'hostname': '40.84.131.14',
+    'azure_fac19_0': {
+        'hostname': '104.214.50.119',
         'username': 'ubuntu',
         'json2mc_path':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'DICE-Verification',
                                                       'd-vert-server', 'd-vert-json2mc')),
-        'exp_dir':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'FAC_2018_exp')),
+        'exp_dir':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'FAC_2019_exp')),
         'env_path': [''],
     },
-    'azure_fac18_2': {
-        'hostname': '40.84.130.94',
+    'azure_fac19_1': {
+        'hostname': '104.214.56.40',
         'username': 'ubuntu',
         'json2mc_path':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'DICE-Verification',
                                                       'd-vert-server', 'd-vert-json2mc')),
-        'exp_dir':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'FAC_2018_exp')),
+        'exp_dir':  os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'FAC_2019_exp')),
         'env_path': [''],
     },
     'fm_biased': {
@@ -70,7 +70,7 @@ REMOTE_D_VERT_SERVERS = {
         'username': 'fmbiased',
         'json2mc_path': os.path.abspath(os.path.join(os.sep, 'home', 'fmbiased', 'DICE', 'Francesco', 'd4s',
                                                      'd-vert-server', 'd-vert-json2mc')),
-        'exp_dir': os.path.abspath(os.path.join(os.sep, 'home', 'fmbiased', 'FAC_2018_exp')),
+        'exp_dir': os.path.abspath(os.path.join(os.sep, 'home', 'fmbiased', 'FAC_2019_exp')),
         'env_path': ['/home/fmbiased/DICE/Francesco/zot/bin:/home/fmbiased/DICE/Francesco/z3/bin:'
                      '/home/fmbiased/uppaal64-4.1.19/bin-Linux'],
     },
@@ -79,9 +79,8 @@ REMOTE_D_VERT_SERVERS = {
         'username': 'bersani',
         'json2mc_path': os.path.abspath(os.path.join(os.sep, 'home', 'fmbiased', 'DICE', 'Francesco', 'd4s',
                                                      'd-vert-server', 'd-vert-json2mc')),
-        'exp_dir': os.path.abspath(os.path.join(os.sep, 'home', 'bersani', 'FAC_2018_exp')),
-        'env_path': ['/home/fmbiased/DICE/Francesco/zot/bin:/home/fmbiased/DICE/Francesco/z3/bin:'
-                     '/home/fmbiased/uppaal64-4.1.19/bin-Linux'],
+        'exp_dir': os.path.abspath(os.path.join(os.sep, 'home', 'bersani', 'FAC_2019_exp')),
+        'env_path': [''],
     },
 
 }
@@ -91,9 +90,9 @@ SERVER_NAMES = list(REMOTE_D_VERT_SERVERS.keys())
 EXP_DIR = os.path.join('d4s_FAC')
 
 ABS_EXP_DIR = {
-    'marce_biased': os.path.abspath(os.path.join(os.sep, 'home', 'bersani', 'FAC_2018_exp')),
-    'fm_biased': os.path.abspath(os.path.join(os.sep, 'home', 'bersani', 'FAC_2018_exp')),
-    'azure': os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'FAC_2018_exp'))
+    'marce_biased': os.path.abspath(os.path.join(os.sep, 'home', 'bersani', 'FAC_2019_exp')),
+    'fm_biased': os.path.abspath(os.path.join(os.sep, 'home', 'bersani', 'FAC_2019_exp')),
+    'azure': os.path.abspath(os.path.join(os.sep, 'home', 'ubuntu', 'FAC_2019_exp'))
 }
 
 PATH = {
@@ -161,25 +160,29 @@ GQ_AVG_T_REC_AVG = 't_task'
 GQ_AVG_T_REC_LOC = 't_task_num_v'
 SIGMA_0_25 = 't_task_0_25_sigma'
 SIGMA_0_30 = 't_task_0_30_sigma'
+SIGMA_0_80 = 't_task_0_80_sigma'
 
 NUM_RECORDS_FACTOR = {
     'pagerank': 20,
     'kmeans': 2,
-    'sort_by_key': 20000000
+    'sort_by_key': 20000000,
+    'louvain': 1,
 }
 
 PERCENTAGES = [
     # 0,
-    # # 1,
-    # # 3,
-    # 5,
-    # 10,
-    # # 15,
-    # 20,
+    1,
+    # 2,
+    # 3,
+    5,
+    # 7,
+    10,
+    15,
+    20,
     # # -1,
     # # -5,
-    -10,
-    -20,
+    # -10,
+    # -20,
     ]
 
 
@@ -244,6 +247,7 @@ def compute_t_task(stages_struct, num_records, num_cores, benchmark, num_task=No
         stage['t_task_avg'] = {}
         stage['t_task_0_25_sigma_local'] = {}
         stage['t_task_0_30_sigma_local'] = {}
+        stage['t_task_0_80_sigma_local'] = {}
         num_batches = math.ceil(num_task / num_cores)
         # TODO remove this approximation (it only works when rounded_tasks == num_tasks)
         rounded_tasks = num_cores * num_batches
@@ -258,6 +262,8 @@ def compute_t_task(stages_struct, num_records, num_cores, benchmark, num_task=No
                                                                                              stage['avg_t_std_dev'][v]
             stage['t_task_0_30_sigma_local'][v] = stage['avg_t_avg_duration_ta_master'][v] + 0.3 * \
                                                                                              stage['avg_t_std_dev'][v]
+            stage['t_task_0_80_sigma_local'][v] = stage['avg_t_avg_duration_ta_master'][v] + 0.8 * \
+                                                  stage['avg_t_std_dev'][v]
         print('num_records: {}'.format(num_records))
         num_v = str(int(num_records / NUM_RECORDS_FACTOR[benchmark]))
         print('if {} in {}:'.format(num_v, stage['t_task_local']))
@@ -265,10 +271,12 @@ def compute_t_task(stages_struct, num_records, num_cores, benchmark, num_task=No
             stage['t_task_num_v'] = stage['t_task_local'][num_v]
             stage['t_task_0_25_sigma'] = stage['t_task_0_25_sigma_local'][num_v]
             stage['t_task_0_30_sigma'] = stage['t_task_0_30_sigma_local'][num_v]
+            stage['t_task_0_80_sigma'] = stage['t_task_0_80_sigma_local'][num_v]
         else:
             stage['t_task_num_v'] = 0
             stage['t_task_0_25_sigma'] = 0
             stage['t_task_0_30_sigma'] = 0
+            stage['t_task_0_80_sigma'] = 0
         stage['t_task_verification'] = stage[t_task_policy]
     return {s['id']: s['t_task'] for s in stages_struct.values()}, \
            {s['id']: s['t_task_num_v'] for s in stages_struct.values()}, \
@@ -296,7 +304,7 @@ def build_generic_stages_struct(profiled_stages, res):  # avg_gq, avg_t_record, 
 
 
 def calculate_sequential_duration(generic_stages_struct, num_tasks, num_cores, t_task_policy):
-    seq_duration_avg_t_record = seq_duration_local_t_record = seq_duration_sigma_0_25 = selected_seq_duration = seq_duration_sigma_0_30 = 0
+    seq_duration_avg_t_record = seq_duration_local_t_record = seq_duration_sigma_0_25 = selected_seq_duration = seq_duration_sigma_0_30 = seq_duration_sigma_0_80 = 0
     for k, v in generic_stages_struct.items():
         if not num_tasks:
             num_tasks = v['numtask']
@@ -307,6 +315,7 @@ def calculate_sequential_duration(generic_stages_struct, num_tasks, num_cores, t
         seq_duration_avg_t_record += v['t_task'] * num_batches
         seq_duration_sigma_0_25 += v['t_task_0_25_sigma'] * num_batches
         seq_duration_sigma_0_30 += v['t_task_0_30_sigma'] * num_batches
+        seq_duration_sigma_0_80 += v['t_task_0_80_sigma'] * num_batches
         selected_seq_duration += v[t_task_policy] * num_batches
         print('S{}\t-> tmp "local" sequential duration: {}ms\t(+{})'.format(k, int(seq_duration_local_t_record),
                                                                             v['t_task_num_v'] * num_batches))
@@ -316,11 +325,14 @@ def calculate_sequential_duration(generic_stages_struct, num_tasks, num_cores, t
                                                                                v['t_task_0_25_sigma'] * num_batches))
         print('S{}\t-> tmp 0_30_sigma sequential duration: {}ms\t(+{})'.format(k, int(seq_duration_sigma_0_30),
                                                                                v['t_task_0_30_sigma'] * num_batches))
+        print('S{}\t-> tmp 0_80_sigma sequential duration: {}ms\t(+{})'.format(k, int(seq_duration_sigma_0_80),
+                                                                               v['t_task_0_80_sigma'] * num_batches))
 
     print('estimated "local" sequential duration: {}ms'.format(int(seq_duration_local_t_record)))
     print('estimated average sequential duration: {}ms'.format(int(seq_duration_avg_t_record)))
     print('estimated 0_25_sigma sequential duration: {}ms'.format(int(seq_duration_sigma_0_25)))
     print('estimated 0_30_sigma sequential duration: {}ms'.format(int(seq_duration_sigma_0_30)))
+    print('estimated 0_80_sigma sequential duration: {}ms'.format(int(seq_duration_sigma_0_80)))
     return selected_seq_duration
 
 
@@ -354,7 +366,7 @@ def generate_spark_context(args):
         with open(aggregated_stats_path[0]) as asf:
             aggregated_stats = json.load(asf)
             benchmark = aggregated_stats['benchmark_name']
-    t_task_policy = GQ_AVG_T_REC_LOC
+    t_task_policy = SIGMA_0_80
     compute_t_task(stages_struct=generic_stages_struct, num_records=num_records, num_task=num_tasks,
                    t_task_policy=t_task_policy, num_cores=num_cores, benchmark=benchmark)
 
@@ -485,7 +497,7 @@ def launch_verification(args):
                 json.dump(context, outfile, indent=4, sort_keys=True)
             context_files_struct['{}__{}'.format(tb, d)] = out_path_context
     if run_verification:
-        od = collections.OrderedDict(sorted(context_files_struct.items(), reverse=False))
+        od = collections.OrderedDict(sorted(context_files_struct.items(), reverse=True))
         with ThreadPoolExecutor(max_workers) as executor:
             for k, v in od.items():
                 print("TIMEBOUND__DEADLINE: {}\nFile: {}".format(k, v))

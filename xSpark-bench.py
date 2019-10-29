@@ -57,6 +57,7 @@ def setup_cluster(cluster, num_instances, assume_yes):
         'hdfs' : 1,
         'generic': 0,
         'fac18': 0,
+        'fac19': 0,
     }
     cluster_id = CLUSTER_MAP[cluster]
     print(bold('Setup {} with {} instances...'.format(cluster_id, num_instances)))
